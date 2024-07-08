@@ -108,46 +108,11 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
     public async Task<int> Revoke(string caRequestID, string hexSerialNumber, uint revocationReason)
     {
-        _logger.LogDebug($"Revoking certificate with request ID: {caRequestID}");
-        RevocationReason reason;
-        switch (revocationReason)
-        {
-            case 1:
-                // Key Compromise
-                reason = RevocationReason.KeyCompromise;
-                break;
+        _logger.LogDebug($"Revoking certificate withKeyfactor.PKI.Enums.EJBCA.EndEntityStatus request ID: {caRequestID}");
 
-            case 2:
-                // CA Compromise
-                reason = RevocationReason.CertificateAuthorityCompromise;
-                break;
-
-            case 3:
-                // Affiliation Changed
-                reason = RevocationReason.AffiliationChanged;
-                break;
-
-            case 4:
-                // Superseded
-                reason = RevocationReason.Superseded;
-                break;
-
-            case 5:
-                // Cessation of Operation
-                reason = RevocationReason.CessationOfOperation;
-                break;
-
-            case 6:
-                // Certificate Hold
-                reason = RevocationReason.CertificateHold;
-                break;
-
-            default:
-                reason = RevocationReason.CessationOfOperation;
-                break;
-        }
-
-        await Client.RevokeCertificate(caRequestID, reason);
+        // Google.Cloud.Security.PrivateCA.V1.RevocationReason has the same mapping as 
+        // Keyfactor.PKI.Enums.EJBCA.EndEntityStatus
+        await Client.RevokeCertificate(caRequestID, (RevocationReason)revocationReason);
         return (int)EndEntityStatus.REVOKED;
     }
 

@@ -74,14 +74,14 @@ public class GCPCASPluginConfig
             },
             [ConfigConstants.CAPool] = new PropertyConfigInfo()
             {
-                Comments = "The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name 'projects/my-project/locations/us-central1/caPools/my-pool', this field should be set to 'my-pool'",
+                Comments = "The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name `projects/my-project/locations/us-central1/caPools/my-pool`, this field should be set to `my-pool`",
                 Hidden = false,
                 DefaultValue = "",
                 Type = "String"
             },
             [ConfigConstants.CAId] = new PropertyConfigInfo()
             {
-                Comments = "The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name 'projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca', this field should be set to 'my-ca'.",
+                Comments = "The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name `projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca`, this field should be set to `my-ca`.",
                 Hidden = false,
                 DefaultValue = "",
                 Type = "String"

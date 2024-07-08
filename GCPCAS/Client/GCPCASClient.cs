@@ -155,7 +155,6 @@ public class GCPCASClient : IGCPCASClient
             productId = certificate.CertificateTemplateAsCertificateTemplateName.CertificateTemplateId;
         }
 
-
         EndEntityStatus status = EndEntityStatus.GENERATED;
 
         DateTime? revocationDate = null;
