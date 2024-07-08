@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<RootNamespace>Keyfactor.Extensions.CAPlugin.GCPCAS</RootNamespace>
+		<AssemblyName>GCPCASCAPlugin</AssemblyName>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Google.Cloud.Security.PrivateCA.V1" Version="3.9.0" />
+		<PackageReference Include="Keyfactor.AnyGateway.IAnyCAPlugin" Version="3.0.0" />
+		<PackageReference Include="Keyfactor.Logging" Version="1.1.2" />
+		<PackageReference Include="Keyfactor.PKI" Version="6.1.1" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Update="manifest.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>

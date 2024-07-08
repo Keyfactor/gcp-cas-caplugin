@@ -1,0 +1,10 @@
+{  
+    "extensions": {  
+        "Keyfactor.AnyGateway.Extensions.IAnyCAPlugin": {  
+            "GCPCASCAPlugin": {  
+                "assemblypath": "GCPCASCAPlugin.dll",  
+                "TypeFullName": "Keyfactor.Extensions.CAPlugin.GCPCAS.GCPCASCAPlugin"  
+            }  
+        }  
+    }  
+}
