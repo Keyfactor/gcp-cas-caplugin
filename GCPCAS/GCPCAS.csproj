@@ -9,6 +9,8 @@
 	<ItemGroup>
 		<PackageReference Include="Google.Cloud.Security.PrivateCA.V1" Version="3.9.0" />
 		<PackageReference Include="Keyfactor.AnyGateway.IAnyCAPlugin" Version="3.0.0" />
+        <PackageReference Include="Keyfactor.Logging" Version="1.1.1" />
+        <PackageReference Include="Keyfactor.PKI" Version="5.5.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Update="manifest.json">
