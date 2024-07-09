@@ -44,20 +44,15 @@ public class GCPCASPluginConfig
         public bool Enabled { get; set; }
     }
 
-    public static class EnrollmentConfigConstants
+    public static class EnrollmentParametersConstants
     {
-    }
-
-    public class EnrollmentParameters
-    {
-        public int CertificateValidityDays { get; set; }
+        public const string CertificateLifetimeDays = "CertificateLifetimeDays";
     }
 
     public static Dictionary<string, PropertyConfigInfo> GetPluginAnnotations()
     {
         return new Dictionary<string, PropertyConfigInfo>()
         {
-            // TODO make these comments better - they were copied from SPIRE
             [ConfigConstants.LocationId] = new PropertyConfigInfo()
             {
                 Comments = "The GCP location ID where the project containing the target GCP CAS CA is located. For example, 'us-central1'.",
@@ -100,7 +95,13 @@ public class GCPCASPluginConfig
     {
         return new Dictionary<string, PropertyConfigInfo>()
         {
-
+            [EnrollmentParametersConstants.CertificateLifetimeDays] = new PropertyConfigInfo()
+            {
+                Comments = $"The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is {DefaultCertificateLifetime} days.",
+                Hidden = false,
+                DefaultValue = DefaultCertificateLifetime,
+                Type = "Number"
+            },
         };
     }
 }

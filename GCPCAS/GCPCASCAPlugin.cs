@@ -34,50 +34,64 @@ public class GCPCASCAPlugin : IAnyCAPlugin
     ILogger _logger = LogHandler.GetClassLogger<GCPCASCAPlugin>();
     ICertificateDataReader _certificateDataReader;
     IGCPCASClient Client { get; set; }
+    private bool _gcpCasClientWasInjected = false;
+
+    public GCPCASCAPlugin()
+    {
+        // Explicit default constructor
+    }
+
+    public GCPCASCAPlugin(IGCPCASClient client)
+    {
+        Client = client;
+        _gcpCasClientWasInjected = true;
+    }
 
     public void Initialize(IAnyCAPluginConfigProvider configProvider, ICertificateDataReader certificateDataReader)
     {
         GCPCASClientFromCAConnectionData(configProvider.CAConnectionData);
-        return;
-    }
-
-    public Dictionary<string, PropertyConfigInfo> GetTemplateParameterAnnotations()
-    {
-        _logger.LogDebug("Getting Template Parameter Annotations");
-        return GCPCASPluginConfig.GetTemplateParameterAnnotations();
     }
 
     public Dictionary<string, PropertyConfigInfo> GetCAConnectorAnnotations()
     {
-        _logger.LogDebug("Getting CA Connector Annotations");
+        _logger.LogDebug("Returning CA Connector Annotations (Properties)");
         return GCPCASPluginConfig.GetPluginAnnotations();
+    }
+
+    public Dictionary<string, PropertyConfigInfo> GetTemplateParameterAnnotations()
+    {
+        _logger.LogDebug("Returning Template Parameter Annotations (Custom Enrollment Parameters)");
+        return GCPCASPluginConfig.GetTemplateParameterAnnotations();
     }
 
     public List<string> GetProductIds()
     {
-        _logger.LogDebug("Returning available Product IDs");
-        List<string> templates = Client.GetTemplates();
-        templates.Add(GCPCASPluginConfig.NoTemplateName);
-
-        return templates;
+        _logger.LogDebug("Returning available Product IDs as Certificate Templates in the connected GCP CAS");
+        return Client.GetTemplates();
     }
 
-    public Task Ping()
+    public async Task Ping()
     {
-        return Client.Ping();
+        if (!Client.IsEnabled())
+        {
+            _logger.LogDebug("GCPCASClient is disabled. Skipping Ping");
+            return;
+        }
+        _logger.LogDebug("Pinging GCP CAS to validate connection");
+        await Client.ValidateConnection();
     }
 
     public Task ValidateCAConnectionInfo(Dictionary<string, object> connectionInfo)
     {
         GCPCASClientFromCAConnectionData(connectionInfo);
-        Ping();
-        return Task.CompletedTask;
+        return Ping();
     }
 
     public Task ValidateProductInfo(EnrollmentProductInfo productInfo, Dictionary<string, object> connectionInfo)
     {
-        /* GCPCASClientFromCAConnectionData(connectionInfo); */
-        // TODO productInfo contains custom enrollment parameters from Command CSR/PFX enrollment.
+        // WithEnrollmentProductInfo() validates that the custom parameters in EnrollmentProductInfo are valid
+        new CreateCertificateRequestBuilder().WithEnrollmentProductInfo(productInfo);
+        // If this method doesn't throw, the product info is valid
         return Task.CompletedTask;
     }
 
@@ -118,7 +132,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
     private void GCPCASClientFromCAConnectionData(Dictionary<string, object> connectionData)
     {
-        _logger.LogDebug($"Constructing GCP CAS Client from connectionData");
+        _logger.LogDebug($"Validating GCP CAS CA Connection properties");
         var rawData = JsonSerializer.Serialize(connectionData);
         GCPCASPluginConfig.Config config = JsonSerializer.Deserialize<GCPCASPluginConfig.Config>(rawData);
 
@@ -140,15 +154,14 @@ public class GCPCASCAPlugin : IAnyCAPlugin
             throw new ArgumentException($"The following required fields are missing or empty: {string.Join(", ", missingFields)}");
         }
 
-        if (Client == null)
+        if (_gcpCasClientWasInjected && Client != null)
         {
-            // TODO maybe we should only create the client if we're enabled
-            _logger.LogDebug("Creating new GCPCASClient instance.");
-            Client = new GCPCASClient(config.LocationId, config.ProjectId, config.CAPool, config.CAId);
+            _logger.LogDebug("Not building a GCPCASClient - one was injected");
         }
         else
         {
-            _logger.LogDebug("GCPCASClient already configured.");
+            _logger.LogDebug("Creating new GCPCASClient instance.");
+            Client = new GCPCASClient(config.LocationId, config.ProjectId, config.CAPool, config.CAId);
         }
 
         if (config.Enabled)

@@ -22,6 +22,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using static Keyfactor.Extensions.CAPlugin.GCPCAS.GCPCASPluginConfig;
 using Keyfactor.PKI.Enums.EJBCA;
+using Keyfactor.Extensions.CAPlugin.GCPCAS;
+using Google.Cloud.Security.PrivateCA.V1;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCASTests;
 
@@ -47,6 +49,8 @@ public class ClientTests
 
         // Act
         List<string> templates = client.GetTemplates();
+        // There is never a case where there are zero templates - there's always the default "no template"
+        Assert.NotEmpty(templates);
         _logger.LogInformation($"Found {templates.Count} templates: {string.Join(", ", templates)}");
     }
 
@@ -67,31 +71,64 @@ public class ClientTests
     }
 
     [IntegrationTestingFact]
-    public void GCPCASClient_Integration_Enroll_ReturnSuccess()
+    public void GCPCASClient_Integration_EnrollGetRevoke_ReturnSuccess()
     {
         // Arrange
         IntegrationTestingFact env = new();
 
-        for (int i = 0; i < 1000; i++)
+        GCPCASClient client = new GCPCASClient(env.LocationId, env.ProjectId, env.CAPool, env.CAId);
+        client.Enable();
+
+        // Create a CSR
+        string subject = "CN=Test Subject";
+        string csrString = GenerateCSR(subject);
+
+        EnrollmentProductInfo productInfo = new EnrollmentProductInfo
         {
-            IGCPCASClient client = new GCPCASClient(env.LocationId, env.ProjectId, env.CAPool, env.CAId);
-            client.Enable();
+            ProductID = GCPCASPluginConfig.NoTemplateName,
+            ProductParameters = new Dictionary<string, string>
+            {
+                { GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays, "200" }
+            }
+        };
+        ICreateCertificateRequestBuilder builder = new CreateCertificateRequestBuilder()
+            .WithCsr(csrString)
+            .WithEnrollmentProductInfo(productInfo);
 
-            // CSR
-            string subject = "CN=Test Subject";
-            string csrString = GenerateCSR(subject);
+        // Act
+        _logger.LogInformation($"Enrolling test certificate with DN {subject} using GCP CAS CA called {env.CAId}");
+        EnrollmentResult enrollResult = client.Enroll(builder, CancellationToken.None).Result;
 
-            EnrollmentParameters parameters = new EnrollmentParameters();
+        // Assert
+        Assert.Equal(enrollResult.Status, (int)EndEntityStatus.GENERATED);
+        Assert.NotNull(enrollResult.CARequestID);
+        _logger.LogInformation($"Certificate enrollment validated successfully");
 
-            ICreateCertificateRequestBuilder builder = new CreateCertificateRequestBuilder()
-                .WithCsr(csrString);
+        // Act
+        _logger.LogInformation($"Downloading test certificate identified as {enrollResult.CARequestID} from GCP CAS CA called {env.CAId}");
+        AnyCAPluginCertificate downloadResult = client.DownloadCertificate(enrollResult.CARequestID).Result;
 
-            // Act
-            EnrollmentResult result = client.Enroll(builder, CancellationToken.None).Result;
+        // Assert
+        Assert.Equal(enrollResult.Status, downloadResult.Status);
+        Assert.Equal(enrollResult.CARequestID, downloadResult.CARequestID);
+        Assert.Equal(enrollResult.Certificate, downloadResult.Certificate);
+        _logger.LogInformation($"Verified that the downloaded certificate identified as {downloadResult.CARequestID} is the same as the initially enrolled certificate");
 
-            // Assert
-            Assert.Equal(result.Status, (int)EndEntityStatus.GENERATED);
-        }
+        // Act
+        _logger.LogInformation($"Revoking test certificate identified as {enrollResult.CARequestID} issued by GCP CAS CA called {env.CAId}");
+        client.RevokeCertificate(enrollResult.CARequestID, RevocationReason.CessationOfOperation).Wait();
+
+        _logger.LogInformation($"Downloading test certificate identified as {enrollResult.CARequestID} from GCP CAS CA called {env.CAId}");
+        downloadResult = client.DownloadCertificate(enrollResult.CARequestID).Result;
+
+        // Assert
+        Assert.Equal(enrollResult.CARequestID, downloadResult.CARequestID);
+        Assert.Equal(enrollResult.Certificate, downloadResult.Certificate);
+        Assert.Equal(downloadResult.Status, (int)EndEntityStatus.REVOKED);
+        // Cecession of Operation should be reason 5
+        Assert.Equal(downloadResult.RevocationReason, 5);
+
+        _logger.LogInformation("GCPCASClient_Integration_EnrollGetRevoke_ReturnSuccess was successful");
     }
 
     static void ConfigureLogging()

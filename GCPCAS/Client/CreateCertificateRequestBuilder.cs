@@ -48,18 +48,28 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
         }
         else
         {
-            _logger.LogDebug($"Configuring CreateCertificateRequest with the {productInfo.ProductID} Certificate Template.");
+            _logger.LogDebug($"Configuring {typeof(CreateCertificateRequest).ToString()} with the {productInfo.ProductID} Certificate Template.");
             _certificateTemplate = productInfo.ProductID;
         }
 
-        _logger.LogDebug($"Parsing Custom Enrollment Parameters");
-        var parametersJson = JsonSerializer.Serialize(productInfo.ProductParameters);
-        GCPCASPluginConfig.EnrollmentParameters enrollmentParameters = JsonSerializer.Deserialize<GCPCASPluginConfig.EnrollmentParameters>(parametersJson);
-
-        if (enrollmentParameters.CertificateValidityDays > 0)
+        if (productInfo.ProductParameters != null)
         {
-            _logger.LogDebug($"Found non-null CertificateValidityDays Custom Enrollment parameter - Configuring CreateCertificateRequest to use a validity of {enrollmentParameters.CertificateValidityDays} days.");
-            _certificateLifetimeDays = enrollmentParameters.CertificateValidityDays;
+            _logger.LogDebug($"Parsing Custom Enrollment Parameters");
+
+            if (productInfo.ProductParameters.TryGetValue(GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays, out string certificateLifetimeDaysString))
+            {
+                if (int.TryParse(certificateLifetimeDaysString, out _certificateLifetimeDays))
+                {
+                    _logger.LogDebug($"Found non-null CertificateValidityDays Custom Enrollment parameter - Configured CreateCertificateRequest to use a validity of {_certificateLifetimeDays} days.");
+                }
+                else
+                {
+                    string error = $"Unable to parse integer value from {GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays} Custom Enrollment Parameter";
+                    _logger.LogError(error);
+                    throw new ArgumentException(error);
+                }
+
+            }
         }
 
         return this;
@@ -67,26 +77,30 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
     public ICreateCertificateRequestBuilder WithEnrollmentType(EnrollmentType enrollmentType)
     {
-        // Not used
+        if (enrollmentType != EnrollmentType.New) _logger.LogTrace($"{typeof(EnrollmentType).ToString()} is {enrollmentType.ToString()} - Ignoring and treating enrollment as {EnrollmentType.New.ToString()}");
         return this;
     }
 
     public ICreateCertificateRequestBuilder WithRequestFormat(RequestFormat requestFormat)
     {
-        // Not used
+        if (requestFormat != RequestFormat.PKCS10)
+        {
+            string error = $"AnyCA Gateway REST framework provided CSR in unsupported format: {requestFormat.ToString()}";
+            _logger.LogError(error);
+            throw new Exception(error);
+        }
         return this;
     }
 
     public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
     {
-        // Not used
+        if (san != null & san.Count > 0) _logger.LogTrace($"Found non-zero list of SANs {san.ToString()} - Ignoring and using SANs from CSR");
         return this;
     }
 
     public ICreateCertificateRequestBuilder WithSubject(string subject)
     {
-        // Not used
-        _logger.LogTrace($"Found Subject {subject} - Using CSR value");
+        if (!string.IsNullOrWhiteSpace(subject)) _logger.LogTrace($"Found non-empty subject {subject} - Ignoring and using CSR value");
         return this;
     }
 
