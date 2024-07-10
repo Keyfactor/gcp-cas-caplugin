@@ -1,5 +1,5 @@
 <h1 align="center" style="border-bottom: none">
-    gcp-cas-ca AnyCA Gateway REST Plugin
+    GCP CAS AnyCA Gateway REST Plugin
 </h1>
 
 <p align="center">
@@ -52,10 +52,10 @@ The [Google Cloud Platform (GCP) CA Services (CAS)](https://cloud.google.com/sec
 
 ## Compatibility
 
-The gcp-cas-ca AnyCA Gateway REST plugin is compatible with the Keyfactor AnyCA Gateway REST 24.2 and later.
+The GCP CAS AnyCA Gateway REST plugin is compatible with the Keyfactor AnyCA Gateway REST 24.2 and later.
 
 ## Support
-The gcp-cas-ca AnyCA Gateway REST plugin is supported by Keyfactor for Keyfactor customers. If you have a support issue, please open a support ticket with your Keyfactor representative. If you have a support issue, please open a support ticket via the Keyfactor Support Portal at https://support.keyfactor.com. 
+The GCP CAS AnyCA Gateway REST plugin is supported by Keyfactor for Keyfactor customers. If you have a support issue, please open a support ticket with your Keyfactor representative. If you have a support issue, please open a support ticket via the Keyfactor Support Portal at https://support.keyfactor.com. 
 
 > To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
 
@@ -103,7 +103,7 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
 
 1. Install the AnyCA Gateway REST per the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/InstallIntroduction.htm).
 
-2. On the server hosting the AnyCA Gateway REST, download and unzip the latest [gcp-cas-ca AnyCA Gateway REST plugin](https://github.com/Keyfactor/gcp-cas-caplugin/releases/latest) from GitHub.
+2. On the server hosting the AnyCA Gateway REST, download and unzip the latest [GCP CAS AnyCA Gateway REST plugin](https://github.com/Keyfactor/gcp-cas-caplugin/releases/latest) from GitHub.
 
 3. Copy the unzipped directory (usually called `net6.0`) to the Extensions directory:
 
@@ -111,11 +111,11 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
     Program Files\Keyfactor\AnyCA Gateway\AnyGatewayREST\net6.0\Extensions
     ```
 
-    > The directory containing the gcp-cas-ca AnyCA Gateway REST plugin DLLs (`net6.0`) can be named anything, as long as it is unique within the `Extensions` directory.
+    > The directory containing the GCP CAS AnyCA Gateway REST plugin DLLs (`net6.0`) can be named anything, as long as it is unique within the `Extensions` directory.
 
 4. Restart the AnyCA Gateway REST service.
 
-5. Navigate to the AnyCA Gateway REST portal and verify that the Gateway recognizes the gcp-cas-ca plugin by hovering over the ⓘ symbol to the right of the Gateway on the top left of the portal.
+5. Navigate to the AnyCA Gateway REST portal and verify that the Gateway recognizes the GCP CAS plugin by hovering over the ⓘ symbol to the right of the Gateway on the top left of the portal.
 
 ## Configuration
 
