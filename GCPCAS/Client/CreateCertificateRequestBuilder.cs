@@ -94,7 +94,7 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
     public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
     {
-        if (san != null & san.Count > 0) _logger.LogTrace($"Found non-zero list of SANs {san.ToString()} - Ignoring and using SANs from CSR");
+        if (san != null & san.Count > 0) _logger.LogTrace($"Found non-zero list of SANs - Ignoring and using SANs from CSR");
         return this;
     }
 

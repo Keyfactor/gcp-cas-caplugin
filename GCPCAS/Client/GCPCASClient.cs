@@ -24,6 +24,7 @@ using Google.Api.Gax.Grpc;
 using Google.Api.Gax.Grpc.Rest;
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.Security.PrivateCA.V1;
+using Google.Protobuf.WellKnownTypes;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Enums.EJBCA;
@@ -66,11 +67,8 @@ public class GCPCASClient : IGCPCASClient
         this._caPool = caPool;
         this._caId = caId;
 
-        _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default {typeof(RestGrpcAdapter).ToString()}");
-        _client = new CertificateAuthorityServiceClientBuilder
-        {
-            GrpcAdapter = RestGrpcAdapter.Default
-        }.Build();
+        _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default gRPC adapter");
+        _client = new CertificateAuthorityServiceClientBuilder().Build();
     }
 
     public override string ToString()
@@ -167,7 +165,7 @@ public class GCPCASClient : IGCPCASClient
     /// <exception cref="Exception">
     /// Thrown if the <see cref="BlockingCollection{T}"/> is null or if the operation fails.
     /// </exception>
-    public async Task<int> DownloadAllIssuedCertificates(BlockingCollection<AnyCAPluginCertificate> certificatesBuffer, CancellationToken cancelToken)
+    public async Task<int> DownloadAllIssuedCertificates(BlockingCollection<AnyCAPluginCertificate> certificatesBuffer, CancellationToken cancelToken, DateTime? issuedAfter = null)
     {
         EnsureClientIsEnabled();
 
@@ -183,6 +181,13 @@ public class GCPCASClient : IGCPCASClient
         {
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
         };
+
+        if (issuedAfter != null)
+        {
+            Timestamp ts = Timestamp.FromDateTime(issuedAfter.Value.ToUniversalTime());
+            _logger.LogDebug($"Filtering issued certificates by update_time >= {ts}");
+            request.Filter = $"update_time >= {ts}";
+        }
 
         _logger.LogTrace($"Setting up {typeof(CallSettings).ToString()} with provided {typeof(CancellationToken).ToString()} {this.ToString()}");
         CallSettings settings = CallSettings.FromCancellationToken(cancelToken);

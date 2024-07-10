@@ -37,7 +37,8 @@
 The [Google Cloud Platform (GCP) CA Services (CAS)](https://cloud.google.com/security/products/certificate-authority-service) AnyCA Gateway REST plugin extends the capabilities of connected GCP CAS CAs to [Keyfactor Command](https://www.keyfactor.com/products/command/) via the Keyfactor AnyCA Gateway REST. The plugin represents a fully featured AnyCA REST Plugin with the following capabilies:
 
 * CA Sync:
-    * Download all certificates issued by connected Enterprise tier CAs in GCP CAS.
+    * Download all certificates issued by connected Enterprise tier CAs in GCP CAS (full sync).
+    * Download all certificates issued by connected Enterprise tier CAs in GCP CAS issued after a specified time (incremental sync).
 * Certificate enrollment for all published GoDaddy Certificate SKUs:
     * Support certificate enrollment (new keys/certificate).
 * Certificate revocation:
@@ -45,11 +46,9 @@ The [Google Cloud Platform (GCP) CA Services (CAS)](https://cloud.google.com/sec
 
 > **🚧 Disclaimer** 
 >
-> CA Sync and Revocation is not directly supported for [DevOps Tier](https://cloud.google.com/certificate-authority-service/docs/tiers) Certificate Authority Pools.
+> CA Sync and Revocation is not supported for [DevOps Tier](https://cloud.google.com/certificate-authority-service/docs/tiers) Certificate Authority Pools.
 > 
 > DevOps tier CA Pools don't offer listing, describing, or revoking certificates.
-
-
 
 ## Compatibility
 
@@ -62,12 +61,43 @@ The gcp-cas-ca AnyCA Gateway REST plugin is supported by Keyfactor for Keyfactor
 
 ## Requirements
 
-Authentication to
+### Application Default Credentials
 
+The GCP CAS AnyCA Gateway REST plugin connects to and authenticates with GCP CAS implicitly using [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials). This means that all authentication-related configuration of the GCP CAS AnyCA Gateway REST plugin is implied by the environment where the AnyCA Gateway REST itself is running.
 
-asdf
+Please refer to [Google's documentation](https://cloud.google.com/docs/authentication/provide-credentials-adc) to configure ADC on the server running the AnyCA Gateway REST.
 
+> The easiest way to configure ADC for non-production environments is to use [User Credentials](https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev).
+>
+> For production environments that use an ADC method requiring the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, you must ensure the following:
+>
+> 1. The service account that the AnyCA Gateway REST runs under must have read permission to the GCP credential JSON file.
+> 2. You must set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable for the Windows Service running the AnyCA Gateway REST using the [Windows registry editor](https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/windows-registry-advanced-users).
+>     * Refer to the [HKLM\SYSTEM\CurrentControlSet\Services Registry Tree](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree) docs
 
+If the selected ADC mechanism is [Service Account Key](https://cloud.google.com/docs/authentication/provide-credentials-adc#wlif-key), it's recommended that a [custom role is created](https://cloud.google.com/iam/docs/creating-custom-roles) that has the following minimum permissions:
+
+* `privateca.certificateTemplates.list`
+* `privateca.certificateTemplates.use`
+* `privateca.certificateAuthorities.get`
+* `privateca.certificates.create`
+* `privateca.certificates.get`
+* `privateca.certificates.list`
+* `privateca.certificates.update`
+
+> The built-in CA Service Operation Manager `roles/privateca.caManager` role can also be used, but is more permissive than a custom role with the above permissions.
+
+### Root CA Configuration
+
+Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA, and if applicable, any subordinate CAs for all features to work as intended. Download the CA Certificate (and chain, if applicable) from GCP [CAS](https://console.cloud.google.com/security/cas), and import them into the appropriate certificate store on the AnyCA Gateway REST server.
+
+* **Windows** - If the AnyCA Gateway REST is running on a Windows host, the root CA and applicable subordinate CAs must be imported into the Windows certificate store. The certificates can be imported using the Microsoft Management Console (MMC) or PowerShell. 
+* **Linux** - If the AnyCA Gateway REST is running on a Linux host, the root CA and applicable subordinate CAs must be present in the root CA certificate store. The location of this store varies per distribution, but is most commonly `/etc/ssl/certs/ca-certificates.crt`. The following is documentation on some popular distributions.
+    * [Ubuntu - Managing CA certificates](https://ubuntu.com/server/docs/install-a-root-ca-certificate-in-the-trust-store)
+    * [RHEL 9 - Using shared system certificates](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/securing_networks/using-shared-system-certificates_securing-networks#using-shared-system-certificates_securing-networks)
+    * [Fedora - Using Shared System Certificates](https://docs.fedoraproject.org/en-US/quick-docs/using-shared-system-certificates/)
+
+> The root CA and intermediate CAs must be trusted by both the Command server _and_ AnyCA Gateway REST server.
 
 ## Installation
 
@@ -93,16 +123,13 @@ asdf
 
     * **Gateway Registration**
 
+        The Gateway Registration tab configures the root or issuing CA certificate for the respective CA in GCP CAS. The certificate selected here should be the issuing CA identified in the [Root CA Configuration](#root-ca-configuration) step.
 
-        asdf
-
-
+        > If you have several CAs in GCP CAS, you must define an individual Certificate Authority for each CA in the AnyCA Gateway REST.
 
     * **CA Connection**
 
         Populate using the configuration fields collected in the [requirements](#requirements) section.
-
-
 
         * **LocationId** - The GCP location ID where the project containing the target GCP CAS CA is located. For example, 'us-central1'. 
         * **ProjectId** - The GCP project ID where the target GCP CAS CA is located 
@@ -110,16 +137,26 @@ asdf
         * **CAId** - The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name `projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca`, this field should be set to `my-ca`. 
         * **Enabled** - Flag to Enable or Disable gateway functionality. Disabling is primarily used to allow creation of the CA prior to configuration information being available. 
 
-2. asdf
+2. Define [Certificate Profiles](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCP-Gateway.htm) and [Certificate Templates](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Gateway.htm) for the Certificate Authority as required. One Certificate Profile must be defined per Certificate Template. It's recommended that each Certificate Profile be named after the Product ID.
 
+    The GCP CAS AnyCA Gateway REST plugin downloads all Certificate Templates in the configured GCP Region/Project and interprets them as 'Product IDs' in the Gateway Portal.
 
+    > For example, if the connected GCP project has the following Certificate Templates:
+    > 
+    > * `ServerAuth`
+    > * `ClientAuth`
+    >
+    > The `Edit Templates` > `Product ID` dialog dropdown will show the following available 'ProductIDs':
+    >
+    > * `Default` -> Don't use a certificate template when enrolling certificates with this Template.
+    > * `ServerAuth` -> Use the `ServerAuth` certificate template in GCP when enrolling certificates with this Template.
+    > * `ClientAuth` -> Use the `ClientAuth` certificate template in GCP when enrolling certificates with this Template.
 
 3. Follow the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Keyfactor.htm) to add each defined Certificate Authority to Keyfactor Command and import the newly defined Certificate Templates.
 
 4. In Keyfactor Command (v12.3+), for each imported Certificate Template, follow the [official documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Configuring%20Template%20Options.htm) to define enrollment fields for each of the following parameters:
 
-
-
+    * **CertificateLifetimeDays** - The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is 365 days. 
 
 
 

@@ -20,7 +20,6 @@ using Microsoft.Extensions.Logging;
 using NLog.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using static Keyfactor.Extensions.CAPlugin.GCPCAS.GCPCASPluginConfig;
 using Keyfactor.PKI.Enums.EJBCA;
 using Keyfactor.Extensions.CAPlugin.GCPCAS;
 using Google.Cloud.Security.PrivateCA.V1;
@@ -67,6 +66,24 @@ public class ClientTests
 
         // Act
         int numberOfDownloadedCerts = client.DownloadAllIssuedCertificates(certificates, CancellationToken.None).Result;
+        _logger.LogInformation($"Number of downloaded certificates: {numberOfDownloadedCerts}");
+    }
+
+    [IntegrationTestingFact]
+    public void GCPCASClient_Integration_DownloadAllCertificatesAfter_ReturnSuccess()
+    {
+        // Arrange
+        IntegrationTestingFact env = new();
+
+        IGCPCASClient client = new GCPCASClient(env.LocationId, env.ProjectId, env.CAPool, env.CAId);
+        client.Enable();
+
+        BlockingCollection<AnyCAPluginCertificate> certificates = new();
+
+        DateTime after = DateTime.UtcNow.AddDays(-100);
+
+        // Act
+        int numberOfDownloadedCerts = client.DownloadAllIssuedCertificates(certificates, CancellationToken.None, after).Result;
         _logger.LogInformation($"Number of downloaded certificates: {numberOfDownloadedCerts}");
     }
 

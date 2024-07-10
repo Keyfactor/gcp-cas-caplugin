@@ -97,8 +97,16 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
     public async Task Synchronize(BlockingCollection<AnyCAPluginCertificate> blockingBuffer, DateTime? lastSync, bool fullSync, CancellationToken cancelToken)
     {
-        _logger.LogInformation("Performing a full CA synchronization");
-        int certificates = await Client.DownloadAllIssuedCertificates(blockingBuffer, cancelToken);
+        if (fullSync && lastSync != null)
+        {
+            _logger.LogInformation("Performing a full CA synchronization");
+            lastSync = null;
+        }
+        else
+        {
+            _logger.LogInformation($"Performing an incremental CA synchronization - downloading certificates issued after {lastSync}");
+        }
+        int certificates = await Client.DownloadAllIssuedCertificates(blockingBuffer, cancelToken, lastSync);
         _logger.LogDebug($"Synchronized {certificates} certificates");
     }
 

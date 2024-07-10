@@ -33,7 +33,12 @@
                     "description": "Flag to Enable or Disable gateway functionality. Disabling is primarily used to allow creation of the CA prior to configuration information being available."
                 }
             ],
-            "enrollment_config": []
+            "enrollment_config": [
+                {
+                    "name": "CertificateLifetimeDays",
+                    "description": "The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is 365 days."
+                }
+            ]
         }
     }
 }
