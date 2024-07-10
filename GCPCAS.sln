@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GCPCAS", "GCPCAS\GCPCAS.csproj", "{CD27873D-BA79-4DCC-BBC7-011325493516}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GCPCAS.Tests", "GCPCAS.Tests\GCPCAS.Tests.csproj", "{8E00E94A-1A16-4D21-B015-53277D6F6016}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CD27873D-BA79-4DCC-BBC7-011325493516}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CD27873D-BA79-4DCC-BBC7-011325493516}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CD27873D-BA79-4DCC-BBC7-011325493516}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CD27873D-BA79-4DCC-BBC7-011325493516}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8E00E94A-1A16-4D21-B015-53277D6F6016}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8E00E94A-1A16-4D21-B015-53277D6F6016}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8E00E94A-1A16-4D21-B015-53277D6F6016}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8E00E94A-1A16-4D21-B015-53277D6F6016}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
