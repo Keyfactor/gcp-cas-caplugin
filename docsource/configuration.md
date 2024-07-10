@@ -12,7 +12,7 @@ The [Google Cloud Platform (GCP) CA Services (CAS)](https://cloud.google.com/sec
 
 > **🚧 Disclaimer** 
 >
-> CA Sync and Revocation is not supported for [DevOps Tier](https://cloud.google.com/certificate-authority-service/docs/tiers) Certificate Authority Pools.
+> The GCP CAS AnyCA Gateway REST plugin is **not** supported for [DevOps Tier](https://cloud.google.com/certificate-authority-service/docs/tiers) Certificate Authority Pools.
 > 
 > DevOps tier CA Pools don't offer listing, describing, or revoking certificates.
 
