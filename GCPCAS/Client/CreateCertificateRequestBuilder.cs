@@ -16,6 +16,7 @@ limitations under the License.
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf.WellKnownTypes;
@@ -31,6 +32,8 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
     private string _csrString;
     private string _certificateTemplate;
+	private string _subject;
+	private List<string> _dnsSans;
     private int _certificateLifetimeDays = GCPCASPluginConfig.DefaultCertificateLifetime;
 
     public ICreateCertificateRequestBuilder WithCsr(string csr)
@@ -94,13 +97,30 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
     public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
     {
-        if (san != null & san.Count > 0) _logger.LogTrace($"Found non-zero list of SANs - Ignoring and using SANs from CSR");
+		_dnsSans = new List<string>();
+		if (san != null & san.Count > 0)
+		{			
+			var dnsKeys = san.Keys.Where(k => k.Contains("dns", StringComparison.OrdinalIgnoreCase)).ToList();
+			foreach (var key in dnsKeys)
+			{
+				_dnsSans.AddRange(san[key]);
+			}
+			_logger.LogTrace($"Found {_dnsSans.Count} SANs");
+		}
+		else
+		{
+			_logger.LogTrace($"Found no external SANs - Using SANs from CSR");
+		}
         return this;
     }
 
     public ICreateCertificateRequestBuilder WithSubject(string subject)
     {
-        if (!string.IsNullOrWhiteSpace(subject)) _logger.LogTrace($"Found non-empty subject {subject} - Ignoring and using CSR value");
+		if (!string.IsNullOrWhiteSpace(subject))
+		{
+			_logger.LogTrace($"Found non-empty subject {subject}");
+			_subject = subject;
+		}
         return this;
     }
 
@@ -109,10 +129,35 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
         _logger.LogDebug("Constructing CreateCertificateRequest");
         CaPoolName caPoolName = new CaPoolName(projectId, locationId, caPool);
 
+		CertificateConfig certConfig = new CertificateConfig();
+		certConfig.SubjectConfig = new CertificateConfig.Types.SubjectConfig();
+		bool useConfig = false;
+		if (!string.IsNullOrEmpty(_subject))
+		{
+			certConfig.SubjectConfig.Subject = new Subject
+			{
+				CommonName = Utilities.ParseSubject(_subject, "CN=", false),
+				Organization = Utilities.ParseSubject(_subject, "O=", false),
+				OrganizationalUnit = Utilities.ParseSubject(_subject, "OU=", false),
+				CountryCode = Utilities.ParseSubject(_subject, "C=", false),
+				Locality = Utilities.ParseSubject(_subject, "L=", false)
+			};
+			useConfig = true;
+		}
+		if (_dnsSans.Count > 0)
+		{
+			certConfig.SubjectConfig.SubjectAltName = new SubjectAltNames
+			{
+				DnsNames = { _dnsSans }
+			};
+			useConfig = true;
+		}
+
         Certificate theCertificate = new Certificate
         {
             PemCsr = _csrString,
             Lifetime = Duration.FromTimeSpan(new TimeSpan(_certificateLifetimeDays, 0, 0, 0)),
+			Config = (useConfig) ? certConfig : null,
         };
 
         if (!string.IsNullOrWhiteSpace(_certificateTemplate))
