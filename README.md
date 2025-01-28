@@ -154,21 +154,6 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
 
 3. Follow the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Keyfactor.htm) to add each defined Certificate Authority to Keyfactor Command and import the newly defined Certificate Templates.
 
-4. In Keyfactor Command (v12.3+), for each imported Certificate Template, follow the [official documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Configuring%20Template%20Options.htm) to define enrollment fields for each of the following parameters:
-
-    * **CertificateLifetimeDays** - The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is 365 days. 
-
-
-## Plugin Mechanics
-### Enrollment/Renewal/Reissuance
-
-The GCP CAS AnyCA Gateway REST plugin treats _all_ certificate enrollment as a new enrollment.
-
-### Synchronization
-
-The GCP CAS AnyCA Gateway REST plugin uses the [`ListCertificatesRequest` RPC](https://cloud.google.com/certificate-authority-service/docs/reference/rpc/google.cloud.security.privateca.v1#google.cloud.security.privateca.v1.ListCertificatesRequest) when synchronizing certificates from GCP. At the time the latest release, this RPC does not enable granularity to list certificates issued by a particular CA. As such, the CA Synchronization job implemented by the plugin will _always_ download all certificates issued by _any CA_ in the CA Pool.
-
-> Friendly reminder to always follow the [GCP CAS best practices](https://cloud.google.com/certificate-authority-service/docs/best-practices)
 
 
 ## License
