@@ -1,3 +1,5 @@
+- 1.1.0
+    - Add support for external SANs/subject (not in CSR)
 - 1.0.0
     - First production release of the GCP CAS AnyCA Gateway REST plugin that implements:
         * CA Sync:
