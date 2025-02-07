@@ -131,6 +131,7 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
 		CertificateConfig certConfig = new CertificateConfig();
 		certConfig.SubjectConfig = new CertificateConfig.Types.SubjectConfig();
+		certConfig.X509Config = new X509Parameters();
 		bool useConfig = false;
 		if (!string.IsNullOrEmpty(_subject))
 		{
