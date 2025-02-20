@@ -25,6 +25,7 @@ using Google.Api.Gax.Grpc.Rest;
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Enums.EJBCA;
@@ -292,21 +293,53 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public async Task<EnrollmentResult> Enroll(ICreateCertificateRequestBuilder createCertificateRequestBuilder, CancellationToken cancelToken)
     {
-        EnsureClientIsEnabled();
-
-        CreateCertificateRequest request = createCertificateRequestBuilder.Build(_locationId, _projectId, _caPool, _caId);
-
-        _logger.LogDebug($"Creating Certificate in GCP CAS with ID {request.CertificateId} {this.ToString()}");
-        Certificate certificate = await _client.CreateCertificateAsync(request);
-        _logger.LogDebug($"Created Certificate in GCP CAS with name {certificate.CertificateName} {this.ToString()}");
-
-        return new EnrollmentResult
+        try
         {
-            CARequestID = certificate.CertificateName.CertificateId,
-            Certificate = certificate.PemCertificate,
-            Status = (int)EndEntityStatus.GENERATED,
-            StatusMessage = $"Certificate with ID {certificate.CertificateName} has been issued",
-        };
+            EnsureClientIsEnabled();
+
+            CreateCertificateRequest request = createCertificateRequestBuilder.Build(_locationId, _projectId, _caPool, _caId);
+
+            _logger.LogDebug($"Creating Certificate in GCP CAS with ID {request.CertificateId} {this}");
+
+            Certificate certificate = await _client.CreateCertificateAsync(request, cancelToken);
+
+            _logger.LogDebug($"Created Certificate in GCP CAS with name {certificate.CertificateName} {this}");
+
+            return new EnrollmentResult
+            {
+                CARequestID = certificate.CertificateName.CertificateId,
+                Certificate = certificate.PemCertificate,
+                Status = (int)EndEntityStatus.GENERATED,
+                StatusMessage = $"Certificate with ID {certificate.CertificateName} has been issued",
+            };
+        }
+        catch (RpcException rpcEx)
+        {
+            _logger.LogError(rpcEx, "RPC Exception while creating certificate.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.FAILED,
+                StatusMessage = $"RPC Error: {rpcEx.Status.Detail}",
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Certificate enrollment operation was canceled.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.CANCELLED,
+                StatusMessage = "Certificate enrollment was canceled.",
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during certificate enrollment.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.FAILED,
+                StatusMessage = $"Unexpected error: {ex.Message}",
+            };
+        }
     }
 
     /// <summary>

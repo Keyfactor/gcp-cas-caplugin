@@ -17,8 +17,10 @@ limitations under the License.
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using Google.Cloud.Security.PrivateCA.V1;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
@@ -131,33 +133,60 @@ public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
 
 		CertificateConfig certConfig = new CertificateConfig();
 		certConfig.SubjectConfig = new CertificateConfig.Types.SubjectConfig();
-		bool useConfig = false;
+
 		if (!string.IsNullOrEmpty(_subject))
 		{
-			certConfig.SubjectConfig.Subject = new Subject
-			{
-				CommonName = Utilities.ParseSubject(_subject, "CN=", false),
-				Organization = Utilities.ParseSubject(_subject, "O=", false),
-				OrganizationalUnit = Utilities.ParseSubject(_subject, "OU=", false),
-				CountryCode = Utilities.ParseSubject(_subject, "C=", false),
-				Locality = Utilities.ParseSubject(_subject, "L=", false)
-			};
-			useConfig = true;
+            Subject parsedSubject = SubjectParser.ParseFromString(_subject);
+            certConfig.SubjectConfig.Subject = parsedSubject;
 		}
-		if (_dnsSans.Count > 0)
+
+        if (_dnsSans.Count > 0)
 		{
-			certConfig.SubjectConfig.SubjectAltName = new SubjectAltNames
-			{
-				DnsNames = { _dnsSans }
-			};
-			useConfig = true;
-		}
+            SubjectAltNames parsedSubjectAltNames = SubjectAltNamesParser.ParseFromDnsList(_dnsSans);
+            certConfig.SubjectConfig.SubjectAltName = parsedSubjectAltNames;
+        }
+
+        if(!string.IsNullOrEmpty(_csrString))
+        {
+            // Convert CSR string to Base64
+            //string csrBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(_csrString));
+
+            // Convert Base64 CSR to ByteString
+            //ByteString csrByteString = ByteString.CopyFromUtf8(csrBase64);
+
+            ByteString csrByteString = ByteString.CopyFromUtf8(_csrString);
+
+            certConfig.PublicKey = new PublicKey
+            {
+                Format= PublicKey.Types.KeyFormat.Pem,
+                Key= csrByteString
+            };
+        }
+
+        certConfig.X509Config = new X509Parameters
+        {
+            KeyUsage = new KeyUsage
+            {
+                BaseKeyUsage = new KeyUsage.Types.KeyUsageOptions
+                {
+                    DigitalSignature = true,
+                    KeyEncipherment = true
+                },
+                ExtendedKeyUsage = new KeyUsage.Types.ExtendedKeyUsageOptions
+                {
+                    ClientAuth = true //TODO find a way to determine client vs server
+                }
+            },
+            CaOptions = new X509Parameters.Types.CaOptions
+            {
+                IsCa = false
+            }
+        };
 
         Certificate theCertificate = new Certificate
         {
-            PemCsr = _csrString,
             Lifetime = Duration.FromTimeSpan(new TimeSpan(_certificateLifetimeDays, 0, 0, 0)),
-			Config = (useConfig) ? certConfig : null,
+			Config = certConfig
         };
 
         if (!string.IsNullOrWhiteSpace(_certificateTemplate))
