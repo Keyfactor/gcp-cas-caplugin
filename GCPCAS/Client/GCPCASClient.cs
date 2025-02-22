@@ -30,6 +30,7 @@ using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Enums.EJBCA;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client;
 
