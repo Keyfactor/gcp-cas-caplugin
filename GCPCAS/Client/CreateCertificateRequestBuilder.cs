@@ -190,8 +190,8 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                 byte[] decodedBytes = Convert.FromBase64String(base64EncodedValue);
 
                 //// Wrap the decoded bytes in an ASN.1 Octet String
-                Asn1Encodable asn1Encodable = new DerOctetString(decodedBytes);
-                byte[] derEncodedValue = asn1Encodable.GetEncoded();  // Ensure DER encoding
+                //Asn1Encodable asn1Encodable = new DerOctetString(decodedBytes);
+                //byte[] derEncodedValue = decodedBytes.GetEncoded();  // Ensure DER encoding
 
                 // Create the X.509 extension with the correct format
                 return new X509Extension
@@ -200,7 +200,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                     {
                         ObjectIdPath = { oid.Split('.').Select(int.Parse) }  // Convert OID to int array
                     },
-                    Value = ByteString.CopyFrom(derEncodedValue)  // Store properly DER-encoded value
+                    Value = ByteString.CopyFrom(decodedBytes)  // Store properly DER-encoded value
                 };
             }
             catch (Exception ex)
