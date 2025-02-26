@@ -30,6 +30,7 @@ using Keyfactor.Logging;
 using Keyfactor.PKI.Enums.EJBCA;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using static Google.Rpc.Context.AttributeContext.Types;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client;
 
@@ -217,12 +218,6 @@ public class GCPCASClient : IGCPCASClient
                 if (response.Certificates == null)
                 {
                     _logger.LogWarning($"GCP returned null certificate list for page number {pageNumber} - continuing {this.ToString()}");
-                    continue;
-                }
-
-                if (response.Certificates != null)
-                {
-                    _logger.LogTrace($"Raw Certificates Results Json {JsonConvert.SerializeObject(response.Certificates)}");
                     continue;
                 }
 
