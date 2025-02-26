@@ -175,10 +175,11 @@ public class GCPCASClient : IGCPCASClient
         {
             string message = "Failed to download issued certificates - certificatesBuffer is null";
             _logger.LogError(message);
-            throw new Exception(message);
+            throw new ArgumentNullException(nameof(certificatesBuffer), message);
         }
 
         _logger.LogTrace($"Setting up {typeof(ListCertificatesRequest).ToString()} with {this.ToString()}");
+
         ListCertificatesRequest request = new ListCertificatesRequest
         {
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
@@ -199,26 +200,53 @@ public class GCPCASClient : IGCPCASClient
 
         int pageNumber = 0;
         int numberOfCertificates = 0;
-        await foreach (var response in certificates.AsRawResponses())
+
+        try
         {
-            if (response.Certificates == null)
+            await foreach (var response in certificates.AsRawResponses())
             {
-                _logger.LogWarning($"GCP returned null {typeof(Google.Protobuf.Collections.RepeatedField<Certificate>).ToString()} object for page number {pageNumber} - optimistically continuing {this.ToString()}");
-                continue;
+                if (response.Certificates == null)
+                {
+                    _logger.LogWarning($"GCP returned null certificate list for page number {pageNumber} - continuing {this.ToString()}");
+                    continue;
+                }
+
+                foreach (Certificate certificate in response.Certificates)
+                {
+                    certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
+                    numberOfCertificates++;
+                    _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
+                }
+
+                _logger.LogTrace($"Fetched page {pageNumber} - Next Page Token: {response.NextPageToken}");
+                pageNumber++;
             }
-            foreach (Certificate certificate in response.Certificates)
-            {
-                certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
-                numberOfCertificates++;
-                _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
-            }
-            _logger.LogTrace($"Fetched page {pageNumber} - Next Page Token: {response.NextPageToken}");
-            pageNumber++;
         }
-        _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages of certificates from GCP CAS {this.ToString()}");
-        certificatesBuffer.CompleteAdding();
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.ResourceExhausted)
+        {
+            _logger.LogError($"Rate limit exceeded while fetching certificates: {ex.Message}");
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Certificate download operation was canceled.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Unexpected error while fetching certificates: {ex.Message}");
+            throw;
+        }
+        finally
+        {
+            certificatesBuffer.CompleteAdding();
+            _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
+        }
+
         return numberOfCertificates;
     }
+
+
 
     /// <summary>
     /// Downloads a certificate with the specified <paramref name="certificateId"/> in PEM format and stores it in a <see cref="AnyCAPluginCertificate"/>.
