@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Keyfactor
+Copyright © 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Google.Api.Gax;
 using Google.Api.Gax.Grpc;
-using Google.Api.Gax.Grpc.Rest;
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf.WellKnownTypes;
@@ -61,7 +60,7 @@ public class GCPCASClient : IGCPCASClient
     public GCPCASClient(string locationId, string projectId, string caPool, string caId)
     {
         _logger = LogHandler.GetClassLogger<GCPCASClient>();
-
+        _logger.MethodEntry();
         _logger.LogDebug($"Creating GCP CA Services Client with Location: {locationId}, Project ID: {projectId}, CA Pool: {caPool}, CA ID: {caId}");
 
         this._projectId = projectId;
@@ -71,6 +70,7 @@ public class GCPCASClient : IGCPCASClient
 
         _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default gRPC adapter");
         _client = new CertificateAuthorityServiceClientBuilder().Build();
+        _logger.MethodExit();
     }
 
     public override string ToString()
@@ -84,11 +84,13 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task Enable()
     {
+        _logger.MethodEntry();
         if (!_clientIsEnabled)
         {
             _logger.LogDebug($"Enabling GCPCAS client {this.ToString()}");
             _clientIsEnabled = true;
         }
+        _logger.MethodExit();
         return Task.CompletedTask;
     }
 
@@ -98,11 +100,13 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task Disable()
     {
+        _logger.MethodEntry();
         if (_clientIsEnabled)
         {
             _logger.LogDebug($"Disabling GCPCAS client {this.ToString()}");
             _clientIsEnabled = false;
         }
+        _logger.MethodExit();
         return Task.CompletedTask;
     }
 
@@ -114,6 +118,8 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public bool IsEnabled()
     {
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return _clientIsEnabled;
     }
 
@@ -126,6 +132,7 @@ public class GCPCASClient : IGCPCASClient
     /// <exception cref="Exception">Thrown if the GCP Application Default Credentials are not properly configured, if the GCP CAS CA Pool/CA is not found/is not compatible, or if the <see cref="GCPCASClient"/> was not enabled via the <see cref="Enable"/> method.</exception>
     public async Task ValidateConnection()
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogTrace($"Searching for  CA called {_caId} in the {_caPool} CA pool");
@@ -149,6 +156,7 @@ public class GCPCASClient : IGCPCASClient
         }
 
         _logger.LogDebug($"{typeof(GCPCASClient).ToString()} is compatible with CA called {ca.CertificateAuthorityName.CertificateAuthorityId} in the {ca.CertificateAuthorityName.CaPoolId} CA Pool.");
+        _logger.MethodExit();
         return;
     }
 
@@ -169,6 +177,7 @@ public class GCPCASClient : IGCPCASClient
     /// </exception>
     public async Task<int> DownloadAllIssuedCertificates(BlockingCollection<AnyCAPluginCertificate> certificatesBuffer, CancellationToken cancelToken, DateTime? issuedAfter = null)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         if (certificatesBuffer == null)
@@ -211,6 +220,12 @@ public class GCPCASClient : IGCPCASClient
                     continue;
                 }
 
+                if (response.Certificates != null)
+                {
+                    _logger.LogTrace($"Raw Certificates Results Json {JsonConvert.SerializeObject(response.Certificates)}");
+                    continue;
+                }
+
                 foreach (Certificate certificate in response.Certificates)
                 {
                     certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
@@ -242,7 +257,7 @@ public class GCPCASClient : IGCPCASClient
             certificatesBuffer.CompleteAdding();
             _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
         }
-
+        _logger.MethodExit();
         return numberOfCertificates;
     }
 
@@ -259,6 +274,7 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public async Task<AnyCAPluginCertificate> DownloadCertificate(string certificateId)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Downloading certificate with ID {certificateId} {this.ToString()}");
@@ -271,11 +287,13 @@ public class GCPCASClient : IGCPCASClient
 
         Certificate certificate = await _client.GetCertificateAsync(request);
         _logger.LogTrace("GetCertificateAsync succeeded");
+        _logger.MethodExit();
         return AnyCAPluginCertificateFromGCPCertificate(certificate);
     }
 
     private AnyCAPluginCertificate AnyCAPluginCertificateFromGCPCertificate(Certificate certificate)
     {
+        _logger.MethodEntry();
         string productId = "";
         if (certificate.CertificateTemplateAsCertificateTemplateName == null)
         {
@@ -297,7 +315,7 @@ public class GCPCASClient : IGCPCASClient
             status = EndEntityStatus.REVOKED;
             revocationReason = (int)certificate.RevocationDetails.RevocationState;
         }
-
+        _logger.MethodExit();
         return new AnyCAPluginCertificate
         {
             CARequestID = certificate.CertificateName.CertificateId,
@@ -324,16 +342,23 @@ public class GCPCASClient : IGCPCASClient
     {
         try
         {
+            _logger.MethodEntry();
             EnsureClientIsEnabled();
 
             CreateCertificateRequest request = createCertificateRequestBuilder.Build(_locationId, _projectId, _caPool, _caId);
 
-            _logger.LogDebug($"Creating Certificate in GCP CAS with ID {request.CertificateId} {this}");
+            if (request != null)
+            {
+                _logger.LogTrace($"Request Json {JsonConvert.SerializeObject(request)}");
+            }
 
             Certificate certificate = await _client.CreateCertificateAsync(request, cancelToken);
 
-            _logger.LogDebug($"Created Certificate in GCP CAS with name {certificate.CertificateName} {this}");
-
+            if (certificate != null)
+            {
+                _logger.LogTrace($"Response Json {JsonConvert.SerializeObject(certificate)}");
+            }
+            _logger.MethodExit();
             return new EnrollmentResult
             {
                 CARequestID = certificate.CertificateName.CertificateId,
@@ -383,6 +408,7 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task RevokeCertificate(string certificateId, RevocationReason reason)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Revoking certificate with ID {certificateId} for reason {reason.ToString()} {this.ToString()}");
@@ -393,6 +419,7 @@ public class GCPCASClient : IGCPCASClient
             Name = new CertificateName(_projectId, _locationId, _caPool, certificateId).ToString(),
             Reason = reason,
         };
+        _logger.MethodExit();
         return _client.RevokeCertificateAsync(request);
     }
 
@@ -404,6 +431,7 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public List<string> GetTemplates()
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Getting Certificate Templates from GCP CA Service for Project: {_projectId}, Location: {_locationId}");

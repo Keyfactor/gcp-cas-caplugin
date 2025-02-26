@@ -1,15 +1,29 @@
+/*
+Copyright © 2025 Keyfactor
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
-using Org.BouncyCastle.Asn1;
-using Org.BouncyCastle.Asn1.X509;
+using Newtonsoft.Json;
 using X509Extension = Google.Cloud.Security.PrivateCA.V1.X509Extension;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
@@ -29,12 +43,15 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
         public ICreateCertificateRequestBuilder WithCsr(string csr)
         {
+            _logger.MethodEntry();
             _csrString = csr;
+            _logger.MethodExit();
             return this;
         }
 
         public ICreateCertificateRequestBuilder WithEnrollmentProductInfo(EnrollmentProductInfo productInfo)
         {
+            _logger.MethodEntry();
             if (productInfo.ProductID == GCPCASPluginConfig.NoTemplateName)
             {
                 _certificateTemplate = null;
@@ -58,6 +75,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                     }
                 }
 
+                _logger.LogTrace($"Looping through extensions for Auto Enrollment Params");
                 // Extract Additional Extensions
                 foreach (var param in productInfo.ProductParameters)
                 {
@@ -66,61 +84,73 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                         string oid = param.Key.Replace("ExtensionData-", ""); // Extract OID from key
                         string base64Value = param.Value;
 
+                        _logger.LogTrace($"Loggin oid and value {oid} {base64Value}");
+
                         var extension = CreateX509Extension(oid, base64Value);
                         if (extension != null)
                         {
+                            _logger.LogTrace($"Adding Extension");
                             _additionalExtensions.Add(extension);
                         }
                     }
                 }
             }
-
+            _logger.MethodExit();
             return this;
         }
 
         public ICreateCertificateRequestBuilder WithEnrollmentType(EnrollmentType enrollmentType)
         {
+            _logger.MethodEntry();
+            _logger.MethodExit();
             return this;
         }
 
         public ICreateCertificateRequestBuilder WithRequestFormat(RequestFormat requestFormat)
         {
+            _logger.MethodEntry();
             if (requestFormat != RequestFormat.PKCS10)
             {
                 throw new Exception($"Unsupported CSR format: {requestFormat}");
             }
+            _logger.MethodExit();
             return this;
         }
 
         public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
         {
+            _logger.MethodEntry();
             _dnsSans = new List<string>();
 
             if (san != null && san.Count > 0)
             {
                 foreach (var key in san.Keys)
                 {
+                    _logger.LogTrace($"San Value {san[key]}");
                     _dnsSans.AddRange(san[key]);
                 }
 
                 _logger.LogTrace($"Found {_dnsSans.Count} SANs");
             }
+            _logger.MethodExit();
             return this;
         }
 
         public ICreateCertificateRequestBuilder WithSubject(string subject)
         {
+            _logger.MethodEntry();
             if (!string.IsNullOrWhiteSpace(subject))
             {
                 _logger.LogTrace($"Found subject {subject}");
                 _subject = subject;
             }
+            _logger.MethodExit();
             return this;
         }
 
         public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId)
         {
-            _logger.LogDebug("Constructing CreateCertificateRequest");
+            _logger.MethodEntry();
 
             CaPoolName caPoolName = new CaPoolName(projectId, locationId, caPool);
 
@@ -129,18 +159,23 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
             if (!string.IsNullOrEmpty(_subject))
             {
+                _logger.LogTrace($"Subject {_subject}");
                 Subject parsedSubject = SubjectParser.ParseFromString(_subject);
+                _logger.LogTrace($"Parsed Subject {JsonConvert.SerializeObject(parsedSubject)}");
                 certConfig.SubjectConfig.Subject = parsedSubject;
             }
 
             if (_dnsSans.Count > 0)
             {
+                _logger.LogTrace($"Getting Subject Alt Names");
                 SubjectAltNames parsedSubjectAltNames = SubjectAltNamesParser.ParseFromDnsList(_dnsSans);
+                _logger.LogTrace($"Parsed AltNames {JsonConvert.SerializeObject(parsedSubjectAltNames)}");
                 certConfig.SubjectConfig.SubjectAltName = parsedSubjectAltNames;
             }
 
             if (!string.IsNullOrEmpty(_csrString))
             {
+                _logger.LogTrace($"Putting Csr in public key {_csrString}");
                 ByteString csrByteString = ByteString.CopyFromUtf8(_csrString);
 
                 certConfig.PublicKey = new PublicKey
@@ -148,6 +183,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                     Format = PublicKey.Types.KeyFormat.Pem,
                     Key = csrByteString
                 };
+                _logger.LogTrace($"Serialized PublicKey {JsonConvert.SerializeObject(certConfig.PublicKey)}");
             }
 
             certConfig.X509Config = new X509Parameters();
@@ -155,19 +191,24 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
             // Add Additional Extensions if present
             if (_additionalExtensions.Count > 0)
             {
+                _logger.LogTrace($"Adding additional Extensions");
+                _logger.LogTrace($"Serialized Additional Extensions {JsonConvert.SerializeObject(_additionalExtensions)}");
                 certConfig.X509Config.AdditionalExtensions.AddRange(_additionalExtensions);
             }
 
+            _logger.LogTrace($"Creating The Certificate");
             Certificate theCertificate = new Certificate
             {
                 Lifetime = Duration.FromTimeSpan(new TimeSpan(_certificateLifetimeDays, 0, 0, 0)),
                 Config = certConfig
             };
+            _logger.LogTrace($"Serialized theCertificate {JsonConvert.SerializeObject(theCertificate)}");
 
             if (!string.IsNullOrWhiteSpace(_certificateTemplate))
             {
                 CertificateTemplateName template = new CertificateTemplateName(projectId, locationId, _certificateTemplate);
                 theCertificate.CertificateTemplate = template.ToString();
+                _logger.LogTrace($"Serialized theCertificate after template {JsonConvert.SerializeObject(theCertificate)}");
             }
 
             CreateCertificateRequest theRequest = new CreateCertificateRequest
@@ -177,6 +218,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                 Certificate = theCertificate,
             };
 
+            _logger.MethodExit();
             return theRequest;
         }
 
@@ -187,13 +229,10 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
         {
             try
             {
+                _logger.MethodEntry();
                 // Decode the Base64-encoded value
                 byte[] decodedBytes = Convert.FromBase64String(base64EncodedValue);
-
-                //// Wrap the decoded bytes in an ASN.1 Octet String
-                //Asn1Encodable asn1Encodable = new DerOctetString(decodedBytes);
-                //byte[] derEncodedValue = decodedBytes.GetEncoded();  // Ensure DER encoding
-
+                _logger.MethodExit();
                 // Create the X.509 extension with the correct format
                 return new X509Extension
                 {
