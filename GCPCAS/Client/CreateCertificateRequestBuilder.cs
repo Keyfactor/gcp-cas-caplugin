@@ -95,13 +95,14 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
         public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
         {
             _dnsSans = new List<string>();
+
             if (san != null && san.Count > 0)
             {
-                var dnsKeys = san.Keys.Where(k => k.Contains("dns", StringComparison.OrdinalIgnoreCase)).ToList();
-                foreach (var key in dnsKeys)
+                foreach (var key in san.Keys)
                 {
                     _dnsSans.AddRange(san[key]);
                 }
+
                 _logger.LogTrace($"Found {_dnsSans.Count} SANs");
             }
             return this;
