@@ -1,5 +1,5 @@
 ﻿/*
-Copyright © 2024 Keyfactor
+Copyright © 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -43,35 +43,43 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
     public GCPCASCAPlugin(IGCPCASClient client)
     {
+        _logger.MethodEntry();
         Client = client;
         _gcpCasClientWasInjected = true;
+        _logger.MethodExit();
     }
 
     public void Initialize(IAnyCAPluginConfigProvider configProvider, ICertificateDataReader certificateDataReader)
     {
+        _logger.MethodEntry();
         GCPCASClientFromCAConnectionData(configProvider.CAConnectionData);
+        _logger.MethodExit();
     }
 
     public Dictionary<string, PropertyConfigInfo> GetCAConnectorAnnotations()
     {
-        _logger.LogDebug("Returning CA Connector Annotations (Properties)");
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return GCPCASPluginConfig.GetPluginAnnotations();
     }
 
     public Dictionary<string, PropertyConfigInfo> GetTemplateParameterAnnotations()
     {
-        _logger.LogDebug("Returning Template Parameter Annotations (Custom Enrollment Parameters)");
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return GCPCASPluginConfig.GetTemplateParameterAnnotations();
     }
 
     public List<string> GetProductIds()
     {
-        _logger.LogDebug("Returning available Product IDs as Certificate Templates in the connected GCP CAS");
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return Client.GetTemplates();
     }
 
     public async Task Ping()
     {
+        _logger.MethodEntry();
         if (!Client.IsEnabled())
         {
             _logger.LogDebug("GCPCASClient is disabled. Skipping Ping");
@@ -79,16 +87,20 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         }
         _logger.LogDebug("Pinging GCP CAS to validate connection");
         await Client.ValidateConnection();
+        _logger.MethodExit();
     }
 
     public Task ValidateCAConnectionInfo(Dictionary<string, object> connectionInfo)
     {
+        _logger.MethodEntry();
         GCPCASClientFromCAConnectionData(connectionInfo);
+        _logger.MethodExit();
         return Ping();
     }
 
     public Task ValidateProductInfo(EnrollmentProductInfo productInfo, Dictionary<string, object> connectionInfo)
     {
+        _logger.MethodEntry();
         // WithEnrollmentProductInfo() validates that the custom parameters in EnrollmentProductInfo are valid
         new CreateCertificateRequestBuilder().WithEnrollmentProductInfo(productInfo);
         // If this method doesn't throw, the product info is valid
@@ -97,6 +109,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
     public async Task Synchronize(BlockingCollection<AnyCAPluginCertificate> blockingBuffer, DateTime? lastSync, bool fullSync, CancellationToken cancelToken)
     {
+        _logger.MethodEntry();
         if (fullSync && lastSync != null)
         {
             _logger.LogInformation("Performing a full CA synchronization");
@@ -108,15 +121,19 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         }
         int certificates = await Client.DownloadAllIssuedCertificates(blockingBuffer, cancelToken, lastSync);
         _logger.LogDebug($"Synchronized {certificates} certificates");
+        _logger.MethodExit();
     }
 
     public Task<AnyCAPluginCertificate> GetSingleRecord(string caRequestID)
     {
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return Client.DownloadCertificate(caRequestID);
     }
 
     public Task<EnrollmentResult> Enroll(string csr, string subject, Dictionary<string, string[]> san, EnrollmentProductInfo productInfo, RequestFormat requestFormat, EnrollmentType enrollmentType)
     {
+        _logger.MethodEntry();
         ICreateCertificateRequestBuilder ccrBuilder = new CreateCertificateRequestBuilder()
             .WithCsr(csr)
             .WithSubject(subject)
@@ -125,21 +142,25 @@ public class GCPCASCAPlugin : IAnyCAPlugin
             .WithRequestFormat(requestFormat)
             .WithEnrollmentType(enrollmentType);
 
+        _logger.MethodExit();
         return Client.Enroll(ccrBuilder, CancellationToken.None);
     }
 
     public async Task<int> Revoke(string caRequestID, string hexSerialNumber, uint revocationReason)
     {
+        _logger.MethodEntry();
         _logger.LogDebug($"Revoking certificate withKeyfactor.PKI.Enums.EJBCA.EndEntityStatus request ID: {caRequestID}");
 
         // Google.Cloud.Security.PrivateCA.V1.RevocationReason has the same mapping as 
         // Keyfactor.PKI.Enums.EJBCA.EndEntityStatus
         await Client.RevokeCertificate(caRequestID, (RevocationReason)revocationReason);
+        _logger.MethodExit();
         return (int)EndEntityStatus.REVOKED;
     }
 
     private void GCPCASClientFromCAConnectionData(Dictionary<string, object> connectionData)
     {
+        _logger.MethodEntry();
         _logger.LogDebug($"Validating GCP CAS CA Connection properties");
         var rawData = JsonSerializer.Serialize(connectionData);
         GCPCASPluginConfig.Config config = JsonSerializer.Deserialize<GCPCASPluginConfig.Config>(rawData);
@@ -180,5 +201,6 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         {
             Client.Disable();
         }
+        _logger.MethodExit();
     }
 }
