@@ -120,41 +120,266 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
 
 ## Configuration
 
-1. Follow the [official AnyCA Gateway REST documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Gateway.htm) to define a new Certificate Authority, and use the notes below to configure the **Gateway Registration** and **CA Connection** tabs:
+### 1. Define a New Certificate Authority in AnyCA Gateway
+Follow the [official AnyCA Gateway REST documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Gateway.htm) to configure a new Certificate Authority.
 
-    * **Gateway Registration**
+#### **Gateway Registration**
+- This section configures the **root or issuing CA certificate** for the respective CA in **Google CAS**.
+- The selected certificate should match the **issuing CA** defined in the [Root CA Configuration](#root-ca-configuration).
+- If multiple CAs exist in **Google CAS**, each CA must be defined separately in **AnyCA Gateway REST**.
 
-        The Gateway Registration tab configures the root or issuing CA certificate for the respective CA in GCP CAS. The certificate selected here should be the issuing CA identified in the [Root CA Configuration](#root-ca-configuration) step.
+#### **CA Connection Settings**
+Populate the following fields using information from **Google CAS**:
 
-        > If you have several CAs in GCP CAS, you must define an individual Certificate Authority for each CA in the AnyCA Gateway REST.
+| Property     | Description  | Example  |
+|-------------|-------------|----------|
+| **LocationId** | GCP region where the CA is located | `us-east1` |
+| **ProjectId** | GCP project ID where the CA resides | `ejbca-enterprise-cloud` |
+| **CAPool** | CA Pool ID within Google CAS | `RSA-SubCA-G1` |
+| **CAId** | Specific CA ID in the pool | `20250205-ids-p4h` |
+| **Enabled** | Toggle to enable or disable the gateway | `true` |
 
-    * **CA Connection**
+---
 
-        Populate using the configuration fields collected in the [requirements](#requirements) section.
+### 2. Define Certificate Profiles and Templates
+Certificate Profiles and Templates define how certificates are issued through **Google CAS**.
 
-        * **LocationId** - The GCP location ID where the project containing the target GCP CAS CA is located. For example, 'us-central1'. 
-        * **ProjectId** - The GCP project ID where the target GCP CAS CA is located 
-        * **CAPool** - The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name `projects/my-project/locations/us-central1/caPools/my-pool`, this field should be set to `my-pool` 
-        * **CAId** - The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name `projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca`, this field should be set to `my-ca`. 
-        * **Enabled** - Flag to Enable or Disable gateway functionality. Disabling is primarily used to allow creation of the CA prior to configuration information being available. 
+- Each **Certificate Profile** corresponds to a **Certificate Template** in Google CAS.
+- The **AnyCA Gateway REST plugin** fetches all available **Google CAS Certificate Templates** and maps them as **Product IDs** in **Keyfactor Gateway**.
 
-2. Define [Certificate Profiles](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCP-Gateway.htm) and [Certificate Templates](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Gateway.htm) for the Certificate Authority as required. One Certificate Profile must be defined per Certificate Template. It's recommended that each Certificate Profile be named after the Product ID.
+#### **Example Mapping of Google CAS Templates to Keyfactor Product IDs**
 
-    The GCP CAS AnyCA Gateway REST plugin downloads all Certificate Templates in the configured GCP Region/Project and interprets them as 'Product IDs' in the Gateway Portal.
+| Google CAS Certificate Template | Keyfactor Product ID | Usage |
+|---------------------------------|----------------------|-------|
+| `ServerCertificate` | `ServerCertificate` | Server authentication |
+| `ClientAuth` | `ClientAuth` | Client authentication |
+| `ClientAuthCert` | `ClientAuthCert` | Custom client authentication |
+| `CSROnly` | `CSROnly` | CSR-based issuance |
+| **None (No Template Used)** | `Default` | Uses CA-level settings |
 
-    > For example, if the connected GCP project has the following Certificate Templates:
-    > 
-    > * `ServerAuth`
-    > * `ClientAuth`
-    >
-    > The `Edit Templates` > `Product ID` dialog dropdown will show the following available 'ProductIDs':
-    >
-    > * `Default` -> Don't use a certificate template when enrolling certificates with this Template.
-    > * `ServerAuth` -> Use the `ServerAuth` certificate template in GCP when enrolling certificates with this Template.
-    > * `ClientAuth` -> Use the `ClientAuth` certificate template in GCP when enrolling certificates with this Template.
+> **Note:** If `Default` is selected, **Google CAS will issue certificates based on CA settings rather than a specific template**.
 
-3. Follow the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Keyfactor.htm) to add each defined Certificate Authority to Keyfactor Command and import the newly defined Certificate Templates.
+---
 
+### 3. Register Certificate Authorities in Keyfactor
+After configuring AnyCA Gateway:
+1. Follow the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Keyfactor.htm) to register the defined **Certificate Authorities** in Keyfactor.
+2. Ensure **imported Certificate Templates** match **Google CAS configurations** to maintain proper mapping.
+
+---
+
+### Summary
+- **Define a CA in AnyCA Gateway** using GCP **Location ID, Project ID, CA Pool, and CA ID**.
+- **Use Certificate Templates** for structured issuance, or select `Default` to rely on CA-level settings.
+- **Ensure all profiles and templates in Keyfactor match Google CAS configurations** for smooth integration.
+
+## Google Certificate Authority Service (CAS) Setup for Keyfactor Integration
+
+### Overview
+
+This guide provides a step-by-step approach to setting up **Google Certificate Authority Service (CAS)** and integrating it with **Keyfactor** for certificate enrollment. Since Google CAS does not extract metadata from Certificate Signing Requests (CSRs), certificate templates must be defined in CAS to allow Keyfactor to request certificates correctly. While **templates are preferred**, they are **not required**—if the **Default** Product ID is used, certificates will be generated based on the CA settings instead of a template.
+
+---
+
+### Prerequisites
+
+Before setting up Google CAS, ensure you have:
+
+- A **Google Cloud account** with billing enabled
+- The **Certificate Authority Service API** activated
+- Required **IAM permissions**:
+  - `roles/privateca.admin` (for managing CAS)
+  - `roles/privateca.certificateManager` (for issuing certificates)
+
+---
+
+### Google CAS Setup
+
+#### **Step 1: Enable Certificate Authority Service API**
+
+```sh
+gcloud services enable privateca.googleapis.com
+```
+
+#### **Step 2: Create a Root Certificate Authority (CA)**
+
+```sh
+gcloud privateca roots create my-root-ca \
+  --location=us-central1 \
+  --key-algorithm=rsa-pkcs1-4096-sha256 \
+  --subject="CN=My Root CA, O=My Organization, C=US" \
+  --use-preset-profile=ROOT_CA_DEFAULT \
+  --bucket=my-ca-bucket
+```
+
+#### **Step 3: Define Certificate Key Usage and Extended Key Usage**
+
+Certificate Key Usage and Extended Key Usage define how the certificates issued by the CA can be used. These must be set at the **CA policy level** or within a **certificate template**.
+
+##### **Option 1: Define Key Usage in CA Policy**
+
+Create a CA policy file (`ca-policy.json`):
+
+```json
+{
+  "baselineValues": {
+    "keyUsage": {
+      "baseKeyUsage": {
+        "digitalSignature": true,
+        "keyEncipherment": true
+      },
+      "extendedKeyUsage": {
+        "serverAuth": true,
+        "clientAuth": true
+      }
+    }
+  }
+}
+```
+
+Apply the policy when creating the CA:
+
+```sh
+gcloud privateca roots create my-root-ca \
+  --location=us-central1 \
+  --key-algorithm=rsa-pkcs1-4096-sha256 \
+  --subject="CN=My Root CA, O=My Organization, C=US" \
+  --use-preset-profile=ROOT_CA_DEFAULT \
+  --bucket=my-ca-bucket \
+  --ca-policy=ca-policy.json
+```
+
+##### **Option 2: Define Key Usage in a Certificate Template (Preferred but Not Required)**
+
+If using a certificate template, create a policy file (`cert-template-policy.json`):
+
+```json
+{
+  "predefinedValues": {
+    "keyUsage": {
+      "baseKeyUsage": {
+        "digitalSignature": true,
+        "keyEncipherment": true
+      },
+      "extendedKeyUsage": {
+        "serverAuth": true,
+        "clientAuth": true
+      }
+    }
+  }
+}
+```
+
+Create the template:
+
+```sh
+gcloud privateca templates create my-cert-template \
+  --location=us-central1 \
+  --policy-file=cert-template-policy.json
+```
+
+If a **template is not used**, certificates will be generated **directly based on CA settings**.
+
+---
+
+### **Certificate Signing Request (CSR) Handling in Google CAS**
+
+- **CSR is only used for the private key proof-of-possession.**
+- **All certificate metadata (e.g., Subject, SANs) must be provided via configuration files or templates.**
+- **Additional fields in the CSR are ignored by Google CAS.**
+
+#### **Example: Issuing a Certificate with a CSR**
+
+##### **1. Generate a CSR**
+
+```sh
+openssl req -new -newkey rsa:2048 -nodes -keyout my-key.pem -out my-csr.pem -subj "/CN=ignored.example.com"
+```
+
+##### **2. Define Certificate Configuration**
+
+```json
+{
+  "lifetime": "2592000s",
+  "subjectConfig": {
+    "subject": {
+      "commonName": "mydomain.com",
+      "organization": "My Organization",
+      "countryCode": "US"
+    },
+    "subjectAltName": {
+      "dnsNames": ["mydomain.com", "www.mydomain.com"]
+    }
+  },
+  "keyUsage": {
+    "baseKeyUsage": {
+      "digitalSignature": true,
+      "keyEncipherment": true
+    },
+    "extendedKeyUsage": {
+      "serverAuth": true
+    }
+  }
+}
+```
+
+##### **3. Issue the Certificate**
+
+```sh
+gcloud privateca certificates create my-cert \
+  --issuer-pool=my-root-ca \
+  --csr my-csr.pem \
+  --config-file cert-config.json \
+  --location=us-central1
+```
+
+---
+
+### **Integrating Keyfactor with Google CAS**
+
+#### **Why Use Certificate Templates?**
+
+- **Google CAS does not extract metadata from CSRs.**
+- **Keyfactor prefers enrollment of certificates via predefined templates** to ensure all attributes (e.g., Subject, SANs) are correctly applied.
+- **Prevents unauthorized data injection via CSRs.**
+- **If no template is used, certificates will be issued based on CA settings using the Default Product ID.**
+
+#### **Step 1: Create a Certificate Template for Keyfactor (Preferred but Not Required)**
+
+Create a **certificate template policy file** (`keyfactor-template-policy.json`):
+
+```json
+{
+  "predefinedValues": {
+    "keyUsage": {
+      "baseKeyUsage": {
+        "digitalSignature": true,
+        "keyEncipherment": true
+      },
+      "extendedKeyUsage": {
+        "serverAuth": true,
+        "clientAuth": true
+      }
+    }
+  },
+  "identityConstraints": {
+    "allowSubjectPassthrough": true,
+    "allowSubjectAltNamesPassthrough": true
+  }
+}
+```
+
+Create the template:
+
+```sh
+gcloud privateca templates create keyfactor-template \
+  --location=us-central1 \
+  --policy-file=keyfactor-template-policy.json
+```
+
+If using the **Default** Product ID in Keyfactor, Google CAS will generate certificates directly from CA settings **without requiring a template**.
+
+---
 
 
 ## License
