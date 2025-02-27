@@ -1,5 +1,5 @@
 /*
-Copyright Â© 2024 Keyfactor
+Copyright © 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,163 +17,238 @@ limitations under the License.
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using Google.Cloud.Security.PrivateCA.V1;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using X509Extension = Google.Cloud.Security.PrivateCA.V1.X509Extension;
 
-namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client;
-
-public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
+namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 {
-    ILogger _logger = LogHandler.GetClassLogger<CreateCertificateRequestBuilder>();
-
-    private string _csrString;
-    private string _certificateTemplate;
-	private string _subject;
-	private List<string> _dnsSans;
-    private int _certificateLifetimeDays = GCPCASPluginConfig.DefaultCertificateLifetime;
-
-    public ICreateCertificateRequestBuilder WithCsr(string csr)
+    public class CreateCertificateRequestBuilder : ICreateCertificateRequestBuilder
     {
-        _csrString = csr;
-        return this;
-    }
+        ILogger _logger = LogHandler.GetClassLogger<CreateCertificateRequestBuilder>();
 
-    public ICreateCertificateRequestBuilder WithEnrollmentProductInfo(EnrollmentProductInfo productInfo)
-    {
-        if (productInfo.ProductID == GCPCASPluginConfig.NoTemplateName)
+        private string _csrString;
+        private string _certificateTemplate;
+        private string _subject;
+        private List<string> _dnsSans;
+        private int _certificateLifetimeDays = GCPCASPluginConfig.DefaultCertificateLifetime;
+
+        // Store additional extensions
+        private List<Google.Cloud.Security.PrivateCA.V1.X509Extension> _additionalExtensions = new List<X509Extension>();
+
+        public ICreateCertificateRequestBuilder WithCsr(string csr)
         {
-            _certificateTemplate = null;
-            _logger.LogDebug($"{GCPCASPluginConfig.NoTemplateName} template selected - Certificate enrollment will defer to the baseline values and policy configured by the CA Pool.");
-        }
-        else
-        {
-            _logger.LogDebug($"Configuring {typeof(CreateCertificateRequest).ToString()} with the {productInfo.ProductID} Certificate Template.");
-            _certificateTemplate = productInfo.ProductID;
+            _logger.MethodEntry();
+            _csrString = csr;
+            _logger.MethodExit();
+            return this;
         }
 
-        if (productInfo.ProductParameters != null)
+        public ICreateCertificateRequestBuilder WithEnrollmentProductInfo(EnrollmentProductInfo productInfo)
         {
-            _logger.LogDebug($"Parsing Custom Enrollment Parameters");
-
-            if (productInfo.ProductParameters.TryGetValue(GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays, out string certificateLifetimeDaysString))
+            _logger.MethodEntry();
+            if (productInfo.ProductID == GCPCASPluginConfig.NoTemplateName)
             {
-                if (int.TryParse(certificateLifetimeDaysString, out _certificateLifetimeDays))
+                _certificateTemplate = null;
+                _logger.LogDebug($"{GCPCASPluginConfig.NoTemplateName} template selected.");
+            }
+            else
+            {
+                _logger.LogDebug($"Configuring request with {productInfo.ProductID} Certificate Template.");
+                _certificateTemplate = productInfo.ProductID;
+            }
+
+            if (productInfo.ProductParameters != null)
+            {
+                _logger.LogDebug($"Parsing Custom Enrollment Parameters");
+
+                if (productInfo.ProductParameters.TryGetValue(GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays, out string certificateLifetimeDaysString))
                 {
-                    _logger.LogDebug($"Found non-null CertificateValidityDays Custom Enrollment parameter - Configured CreateCertificateRequest to use a validity of {_certificateLifetimeDays} days.");
-                }
-                else
-                {
-                    string error = $"Unable to parse integer value from {GCPCASPluginConfig.EnrollmentParametersConstants.CertificateLifetimeDays} Custom Enrollment Parameter";
-                    _logger.LogError(error);
-                    throw new ArgumentException(error);
+                    if (int.TryParse(certificateLifetimeDaysString, out _certificateLifetimeDays))
+                    {
+                        _logger.LogDebug($"Using validity of {_certificateLifetimeDays} days.");
+                    }
                 }
 
+                _logger.LogTrace($"Looping through extensions for Auto Enrollment Params");
+                // Extract Additional Extensions
+                foreach (var param in productInfo.ProductParameters)
+                {
+                    if (param.Key.StartsWith("ExtensionData"))
+                    {
+                        string oid = param.Key.Replace("ExtensionData-", ""); // Extract OID from key
+                        string base64Value = param.Value;
+
+                        _logger.LogTrace($"Loggin oid and value {oid} {base64Value}");
+
+                        var extension = CreateX509Extension(oid, base64Value);
+                        if (extension != null)
+                        {
+                            _logger.LogTrace($"Adding Extension");
+                            _additionalExtensions.Add(extension);
+                        }
+                    }
+                }
+            }
+            _logger.MethodExit();
+            return this;
+        }
+
+        public ICreateCertificateRequestBuilder WithEnrollmentType(EnrollmentType enrollmentType)
+        {
+            _logger.MethodEntry();
+            _logger.MethodExit();
+            return this;
+        }
+
+        public ICreateCertificateRequestBuilder WithRequestFormat(RequestFormat requestFormat)
+        {
+            _logger.MethodEntry();
+            if (requestFormat != RequestFormat.PKCS10)
+            {
+                throw new Exception($"Unsupported CSR format: {requestFormat}");
+            }
+            _logger.MethodExit();
+            return this;
+        }
+
+        public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
+        {
+            _logger.MethodEntry();
+            _dnsSans = new List<string>();
+
+            if (san != null && san.Count > 0)
+            {
+                foreach (var key in san.Keys)
+                {
+                    _logger.LogTrace($"San Value {san[key]}");
+                    _dnsSans.AddRange(san[key]);
+                }
+
+                _logger.LogTrace($"Found {_dnsSans.Count} SANs");
+            }
+            _logger.MethodExit();
+            return this;
+        }
+
+        public ICreateCertificateRequestBuilder WithSubject(string subject)
+        {
+            _logger.MethodEntry();
+            if (!string.IsNullOrWhiteSpace(subject))
+            {
+                _logger.LogTrace($"Found subject {subject}");
+                _subject = subject;
+            }
+            _logger.MethodExit();
+            return this;
+        }
+
+        public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId)
+        {
+            _logger.MethodEntry();
+
+            CaPoolName caPoolName = new CaPoolName(projectId, locationId, caPool);
+
+            CertificateConfig certConfig = new CertificateConfig();
+            certConfig.SubjectConfig = new CertificateConfig.Types.SubjectConfig();
+
+            if (!string.IsNullOrEmpty(_subject))
+            {
+                _logger.LogTrace($"Subject {_subject}");
+                Subject parsedSubject = SubjectParser.ParseFromString(_subject);
+                _logger.LogTrace($"Parsed Subject {JsonConvert.SerializeObject(parsedSubject)}");
+                certConfig.SubjectConfig.Subject = parsedSubject;
+            }
+
+            if (_dnsSans.Count > 0)
+            {
+                _logger.LogTrace($"Getting Subject Alt Names");
+                SubjectAltNames parsedSubjectAltNames = SubjectAltNamesParser.ParseFromDnsList(_dnsSans);
+                _logger.LogTrace($"Parsed AltNames {JsonConvert.SerializeObject(parsedSubjectAltNames)}");
+                certConfig.SubjectConfig.SubjectAltName = parsedSubjectAltNames;
+            }
+
+            if (!string.IsNullOrEmpty(_csrString))
+            {
+                _logger.LogTrace($"Putting Csr in public key {_csrString}");
+                ByteString csrByteString = ByteString.CopyFromUtf8(_csrString);
+
+                certConfig.PublicKey = new PublicKey
+                {
+                    Format = PublicKey.Types.KeyFormat.Pem,
+                    Key = csrByteString
+                };
+                _logger.LogTrace($"Serialized PublicKey {JsonConvert.SerializeObject(certConfig.PublicKey)}");
+            }
+
+            certConfig.X509Config = new X509Parameters();
+
+            // Add Additional Extensions if present
+            if (_additionalExtensions.Count > 0)
+            {
+                _logger.LogTrace($"Adding additional Extensions");
+                _logger.LogTrace($"Serialized Additional Extensions {JsonConvert.SerializeObject(_additionalExtensions)}");
+                certConfig.X509Config.AdditionalExtensions.AddRange(_additionalExtensions);
+            }
+
+            _logger.LogTrace($"Creating The Certificate");
+            Certificate theCertificate = new Certificate
+            {
+                Lifetime = Duration.FromTimeSpan(new TimeSpan(_certificateLifetimeDays, 0, 0, 0)),
+                Config = certConfig
+            };
+            _logger.LogTrace($"Serialized theCertificate {JsonConvert.SerializeObject(theCertificate)}");
+
+            if (!string.IsNullOrWhiteSpace(_certificateTemplate))
+            {
+                CertificateTemplateName template = new CertificateTemplateName(projectId, locationId, _certificateTemplate);
+                theCertificate.CertificateTemplate = template.ToString();
+                _logger.LogTrace($"Serialized theCertificate after template {JsonConvert.SerializeObject(theCertificate)}");
+            }
+
+            CreateCertificateRequest theRequest = new CreateCertificateRequest
+            {
+                ParentAsCaPoolName = caPoolName,
+                CertificateId = Guid.NewGuid().ToString(),
+                Certificate = theCertificate,
+            };
+
+            _logger.MethodExit();
+            return theRequest;
+        }
+
+        /// <summary>
+        /// Creates a properly formatted X509Extension from an OID and Base64-encoded value.
+        /// </summary>
+        private X509Extension CreateX509Extension(string oid, string base64EncodedValue)
+        {
+            try
+            {
+                _logger.MethodEntry();
+                // Decode the Base64-encoded value
+                byte[] decodedBytes = Convert.FromBase64String(base64EncodedValue);
+                _logger.MethodExit();
+                // Create the X.509 extension with the correct format
+                return new X509Extension
+                {
+                    ObjectId = new ObjectId
+                    {
+                        ObjectIdPath = { oid.Split('.').Select(int.Parse) }  // Convert OID to int array
+                    },
+                    Value = ByteString.CopyFrom(decodedBytes)  // Store properly DER-encoded value
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error processing extension {oid}: {ex.Message}");
+                return null;
             }
         }
 
-        return this;
-    }
-
-    public ICreateCertificateRequestBuilder WithEnrollmentType(EnrollmentType enrollmentType)
-    {
-        if (enrollmentType != EnrollmentType.New) _logger.LogTrace($"{typeof(EnrollmentType).ToString()} is {enrollmentType.ToString()} - Ignoring and treating enrollment as {EnrollmentType.New.ToString()}");
-        return this;
-    }
-
-    public ICreateCertificateRequestBuilder WithRequestFormat(RequestFormat requestFormat)
-    {
-        if (requestFormat != RequestFormat.PKCS10)
-        {
-            string error = $"AnyCA Gateway REST framework provided CSR in unsupported format: {requestFormat.ToString()}";
-            _logger.LogError(error);
-            throw new Exception(error);
-        }
-        return this;
-    }
-
-    public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
-    {
-		_dnsSans = new List<string>();
-		if (san != null & san.Count > 0)
-		{			
-			var dnsKeys = san.Keys.Where(k => k.Contains("dns", StringComparison.OrdinalIgnoreCase)).ToList();
-			foreach (var key in dnsKeys)
-			{
-				_dnsSans.AddRange(san[key]);
-			}
-			_logger.LogTrace($"Found {_dnsSans.Count} SANs");
-		}
-		else
-		{
-			_logger.LogTrace($"Found no external SANs - Using SANs from CSR");
-		}
-        return this;
-    }
-
-    public ICreateCertificateRequestBuilder WithSubject(string subject)
-    {
-		if (!string.IsNullOrWhiteSpace(subject))
-		{
-			_logger.LogTrace($"Found non-empty subject {subject}");
-			_subject = subject;
-		}
-        return this;
-    }
-
-    public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId)
-    {
-        _logger.LogDebug("Constructing CreateCertificateRequest");
-        CaPoolName caPoolName = new CaPoolName(projectId, locationId, caPool);
-
-		CertificateConfig certConfig = new CertificateConfig();
-		certConfig.SubjectConfig = new CertificateConfig.Types.SubjectConfig();
-		bool useConfig = false;
-		if (!string.IsNullOrEmpty(_subject))
-		{
-			certConfig.SubjectConfig.Subject = new Subject
-			{
-				CommonName = Utilities.ParseSubject(_subject, "CN=", false),
-				Organization = Utilities.ParseSubject(_subject, "O=", false),
-				OrganizationalUnit = Utilities.ParseSubject(_subject, "OU=", false),
-				CountryCode = Utilities.ParseSubject(_subject, "C=", false),
-				Locality = Utilities.ParseSubject(_subject, "L=", false)
-			};
-			useConfig = true;
-		}
-		if (_dnsSans.Count > 0)
-		{
-			certConfig.SubjectConfig.SubjectAltName = new SubjectAltNames
-			{
-				DnsNames = { _dnsSans }
-			};
-			useConfig = true;
-		}
-
-        Certificate theCertificate = new Certificate
-        {
-            PemCsr = _csrString,
-            Lifetime = Duration.FromTimeSpan(new TimeSpan(_certificateLifetimeDays, 0, 0, 0)),
-			Config = (useConfig) ? certConfig : null,
-        };
-
-        if (!string.IsNullOrWhiteSpace(_certificateTemplate))
-        {
-            CertificateTemplateName template = new CertificateTemplateName(projectId, locationId, _certificateTemplate);
-            theCertificate.CertificateTemplate = template.ToString();
-        }
-
-        CreateCertificateRequest theRequest = new CreateCertificateRequest
-        {
-            ParentAsCaPoolName = caPoolName,
-            CertificateId = Guid.NewGuid().ToString(),
-            Certificate = theCertificate,
-        };
-
-        return theRequest;
     }
 }
-
