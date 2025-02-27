@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Keyfactor
+Copyright © 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,14 +21,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using Google.Api.Gax;
 using Google.Api.Gax.Grpc;
-using Google.Api.Gax.Grpc.Rest;
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
 using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Enums.EJBCA;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using static Google.Rpc.Context.AttributeContext.Types;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client;
 
@@ -59,7 +61,7 @@ public class GCPCASClient : IGCPCASClient
     public GCPCASClient(string locationId, string projectId, string caPool, string caId)
     {
         _logger = LogHandler.GetClassLogger<GCPCASClient>();
-
+        _logger.MethodEntry();
         _logger.LogDebug($"Creating GCP CA Services Client with Location: {locationId}, Project ID: {projectId}, CA Pool: {caPool}, CA ID: {caId}");
 
         this._projectId = projectId;
@@ -69,6 +71,7 @@ public class GCPCASClient : IGCPCASClient
 
         _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default gRPC adapter");
         _client = new CertificateAuthorityServiceClientBuilder().Build();
+        _logger.MethodExit();
     }
 
     public override string ToString()
@@ -82,11 +85,13 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task Enable()
     {
+        _logger.MethodEntry();
         if (!_clientIsEnabled)
         {
             _logger.LogDebug($"Enabling GCPCAS client {this.ToString()}");
             _clientIsEnabled = true;
         }
+        _logger.MethodExit();
         return Task.CompletedTask;
     }
 
@@ -96,11 +101,13 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task Disable()
     {
+        _logger.MethodEntry();
         if (_clientIsEnabled)
         {
             _logger.LogDebug($"Disabling GCPCAS client {this.ToString()}");
             _clientIsEnabled = false;
         }
+        _logger.MethodExit();
         return Task.CompletedTask;
     }
 
@@ -112,6 +119,8 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public bool IsEnabled()
     {
+        _logger.MethodEntry();
+        _logger.MethodExit();
         return _clientIsEnabled;
     }
 
@@ -124,6 +133,7 @@ public class GCPCASClient : IGCPCASClient
     /// <exception cref="Exception">Thrown if the GCP Application Default Credentials are not properly configured, if the GCP CAS CA Pool/CA is not found/is not compatible, or if the <see cref="GCPCASClient"/> was not enabled via the <see cref="Enable"/> method.</exception>
     public async Task ValidateConnection()
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogTrace($"Searching for  CA called {_caId} in the {_caPool} CA pool");
@@ -147,6 +157,7 @@ public class GCPCASClient : IGCPCASClient
         }
 
         _logger.LogDebug($"{typeof(GCPCASClient).ToString()} is compatible with CA called {ca.CertificateAuthorityName.CertificateAuthorityId} in the {ca.CertificateAuthorityName.CaPoolId} CA Pool.");
+        _logger.MethodExit();
         return;
     }
 
@@ -167,16 +178,18 @@ public class GCPCASClient : IGCPCASClient
     /// </exception>
     public async Task<int> DownloadAllIssuedCertificates(BlockingCollection<AnyCAPluginCertificate> certificatesBuffer, CancellationToken cancelToken, DateTime? issuedAfter = null)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         if (certificatesBuffer == null)
         {
             string message = "Failed to download issued certificates - certificatesBuffer is null";
             _logger.LogError(message);
-            throw new Exception(message);
+            throw new ArgumentNullException(nameof(certificatesBuffer), message);
         }
 
         _logger.LogTrace($"Setting up {typeof(ListCertificatesRequest).ToString()} with {this.ToString()}");
+
         ListCertificatesRequest request = new ListCertificatesRequest
         {
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
@@ -197,26 +210,53 @@ public class GCPCASClient : IGCPCASClient
 
         int pageNumber = 0;
         int numberOfCertificates = 0;
-        await foreach (var response in certificates.AsRawResponses())
+
+        try
         {
-            if (response.Certificates == null)
+            await foreach (var response in certificates.AsRawResponses())
             {
-                _logger.LogWarning($"GCP returned null {typeof(Google.Protobuf.Collections.RepeatedField<Certificate>).ToString()} object for page number {pageNumber} - optimistically continuing {this.ToString()}");
-                continue;
+                if (response.Certificates == null)
+                {
+                    _logger.LogWarning($"GCP returned null certificate list for page number {pageNumber} - continuing {this.ToString()}");
+                    continue;
+                }
+
+                foreach (Certificate certificate in response.Certificates)
+                {
+                    certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
+                    numberOfCertificates++;
+                    _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
+                }
+
+                _logger.LogTrace($"Fetched page {pageNumber} - Next Page Token: {response.NextPageToken}");
+                pageNumber++;
             }
-            foreach (Certificate certificate in response.Certificates)
-            {
-                certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
-                numberOfCertificates++;
-                _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
-            }
-            _logger.LogTrace($"Fetched page {pageNumber} - Next Page Token: {response.NextPageToken}");
-            pageNumber++;
         }
-        _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages of certificates from GCP CAS {this.ToString()}");
-        certificatesBuffer.CompleteAdding();
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.ResourceExhausted)
+        {
+            _logger.LogError($"Rate limit exceeded while fetching certificates: {ex.Message}");
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Certificate download operation was canceled.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Unexpected error while fetching certificates: {ex.Message}");
+            throw;
+        }
+        finally
+        {
+            certificatesBuffer.CompleteAdding();
+            _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
+        }
+        _logger.MethodExit();
         return numberOfCertificates;
     }
+
+
 
     /// <summary>
     /// Downloads a certificate with the specified <paramref name="certificateId"/> in PEM format and stores it in a <see cref="AnyCAPluginCertificate"/>.
@@ -229,6 +269,7 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public async Task<AnyCAPluginCertificate> DownloadCertificate(string certificateId)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Downloading certificate with ID {certificateId} {this.ToString()}");
@@ -241,11 +282,13 @@ public class GCPCASClient : IGCPCASClient
 
         Certificate certificate = await _client.GetCertificateAsync(request);
         _logger.LogTrace("GetCertificateAsync succeeded");
+        _logger.MethodExit();
         return AnyCAPluginCertificateFromGCPCertificate(certificate);
     }
 
     private AnyCAPluginCertificate AnyCAPluginCertificateFromGCPCertificate(Certificate certificate)
     {
+        _logger.MethodEntry();
         string productId = "";
         if (certificate.CertificateTemplateAsCertificateTemplateName == null)
         {
@@ -267,7 +310,7 @@ public class GCPCASClient : IGCPCASClient
             status = EndEntityStatus.REVOKED;
             revocationReason = (int)certificate.RevocationDetails.RevocationState;
         }
-
+        _logger.MethodExit();
         return new AnyCAPluginCertificate
         {
             CARequestID = certificate.CertificateName.CertificateId,
@@ -292,21 +335,60 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public async Task<EnrollmentResult> Enroll(ICreateCertificateRequestBuilder createCertificateRequestBuilder, CancellationToken cancelToken)
     {
-        EnsureClientIsEnabled();
-
-        CreateCertificateRequest request = createCertificateRequestBuilder.Build(_locationId, _projectId, _caPool, _caId);
-
-        _logger.LogDebug($"Creating Certificate in GCP CAS with ID {request.CertificateId} {this.ToString()}");
-        Certificate certificate = await _client.CreateCertificateAsync(request);
-        _logger.LogDebug($"Created Certificate in GCP CAS with name {certificate.CertificateName} {this.ToString()}");
-
-        return new EnrollmentResult
+        try
         {
-            CARequestID = certificate.CertificateName.CertificateId,
-            Certificate = certificate.PemCertificate,
-            Status = (int)EndEntityStatus.GENERATED,
-            StatusMessage = $"Certificate with ID {certificate.CertificateName} has been issued",
-        };
+            _logger.MethodEntry();
+            EnsureClientIsEnabled();
+
+            CreateCertificateRequest request = createCertificateRequestBuilder.Build(_locationId, _projectId, _caPool, _caId);
+
+            if (request != null)
+            {
+                _logger.LogTrace($"Request Json {JsonConvert.SerializeObject(request)}");
+            }
+
+            Certificate certificate = await _client.CreateCertificateAsync(request, cancelToken);
+
+            if (certificate != null)
+            {
+                _logger.LogTrace($"Response Json {JsonConvert.SerializeObject(certificate)}");
+            }
+            _logger.MethodExit();
+            return new EnrollmentResult
+            {
+                CARequestID = certificate.CertificateName.CertificateId,
+                Certificate = certificate.PemCertificate,
+                Status = (int)EndEntityStatus.GENERATED,
+                StatusMessage = $"Certificate with ID {certificate.CertificateName} has been issued",
+            };
+        }
+        catch (RpcException rpcEx)
+        {
+            _logger.LogError(rpcEx, "RPC Exception while creating certificate.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.FAILED,
+                StatusMessage = $"RPC Error: {rpcEx.Status.Detail}",
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Certificate enrollment operation was canceled.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.CANCELLED,
+                StatusMessage = "Certificate enrollment was canceled.",
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during certificate enrollment.");
+            return new EnrollmentResult
+            {
+                Status = (int)EndEntityStatus.FAILED,
+                StatusMessage = $"Unexpected error: {ex.Message}",
+            };
+        }
     }
 
     /// <summary>
@@ -321,6 +403,7 @@ public class GCPCASClient : IGCPCASClient
     /// <returns></returns>
     public Task RevokeCertificate(string certificateId, RevocationReason reason)
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Revoking certificate with ID {certificateId} for reason {reason.ToString()} {this.ToString()}");
@@ -331,6 +414,7 @@ public class GCPCASClient : IGCPCASClient
             Name = new CertificateName(_projectId, _locationId, _caPool, certificateId).ToString(),
             Reason = reason,
         };
+        _logger.MethodExit();
         return _client.RevokeCertificateAsync(request);
     }
 
@@ -342,6 +426,7 @@ public class GCPCASClient : IGCPCASClient
     /// </returns>
     public List<string> GetTemplates()
     {
+        _logger.MethodEntry();
         EnsureClientIsEnabled();
 
         _logger.LogDebug($"Getting Certificate Templates from GCP CA Service for Project: {_projectId}, Location: {_locationId}");
