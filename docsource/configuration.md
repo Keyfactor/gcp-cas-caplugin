@@ -69,34 +69,30 @@ Define [Certificate Profiles](https://software.keyfactor.com/Guides/AnyCAGateway
 
 The GCP CAS AnyCA Gateway REST plugin downloads all Certificate Templates in the configured GCP Region/Project and interprets them as 'Product IDs' in the Gateway Portal.
 
-> For example, if the connected GCP project has the following Certificate Templates:
-> 
-> * `ServerAuth`
-> * `ClientAuth`
->
-> The `Edit Templates` > `Product ID` dialog dropdown will show the following available 'ProductIDs':
->
-> * `Default` -> Don't use a certificate template when enrolling certificates with this Template.
-> * `ServerAuth` -> Use the `ServerAuth` certificate template in GCP when enrolling certificates with this Template.
-> * `ClientAuth` -> Use the `ClientAuth` certificate template in GCP when enrolling certificates with this Template.
+
+### Define Certificate Profiles and Templates
+Certificate Profiles and Templates define how certificates are issued through **Google CAS**.
+
+- Each **Certificate Profile** corresponds to a **Certificate Template** in Google CAS.
+- The **AnyCA Gateway REST plugin** fetches all available **Google CAS Certificate Templates** and maps them as **Product IDs** in **Keyfactor Gateway**.
+
+#### **Example Mapping of Google CAS Templates to Keyfactor Product IDs**
+
+| Google CAS Certificate Template | Keyfactor Product ID | Usage |
+|---------------------------------|----------------------|-------|
+| `ServerCertificate` | `ServerCertificate` | Server authentication |
+| `ClientAuth` | `ClientAuth` | Client authentication |
+| `ClientAuthCert` | `ClientAuthCert` | Custom client authentication |
+| `CSROnly` | `CSROnly` | CSR-based issuance |
+| **None (No Template Used)** | `Default` | Uses CA-level settings |
+
+> **Note:** If `Default` is selected, **Google CAS will issue certificates based on CA settings rather than a specific template**.
 
 ## Google Certificate Authority Service (CAS) Setup for Keyfactor Integration
 
 ### Overview
 
 This guide provides a step-by-step approach to setting up **Google Certificate Authority Service (CAS)** and integrating it with **Keyfactor** for certificate enrollment. Since Google CAS does not extract metadata from Certificate Signing Requests (CSRs), certificate templates must be defined in CAS to allow Keyfactor to request certificates correctly. While **templates are preferred**, they are **not required**—if the **Default** Product ID is used, certificates will be generated based on the CA settings instead of a template.
-
----
-
-### Prerequisites
-
-Before setting up Google CAS, ensure you have:
-
-- A **Google Cloud account** with billing enabled
-- The **Certificate Authority Service API** activated
-- Required **IAM permissions**:
-  - `roles/privateca.admin` (for managing CAS)
-  - `roles/privateca.certificateManager` (for issuing certificates)
 
 ---
 
