@@ -1,3 +1,7 @@
+- 1.1.1
+    - Fixed bug with Enrollment and Auto Enrollment
+    - Fixed issue where only DNS Sans are supported
+    - Added additional Logging
 - 1.1.0
     - Add support for external SANs/subject (not in CSR)
 - 1.0.0
