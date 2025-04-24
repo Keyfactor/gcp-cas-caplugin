@@ -148,7 +148,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
             return this;
         }
 
-        public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId)
+        public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId = null)
         {
             _logger.MethodEntry();
 
@@ -188,7 +188,6 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
             certConfig.X509Config = new X509Parameters();
 
-            // Add Additional Extensions if present
             if (_additionalExtensions.Count > 0)
             {
                 _logger.LogTrace($"Adding additional Extensions");
@@ -218,9 +217,17 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                 Certificate = theCertificate,
             };
 
+            if (!string.IsNullOrEmpty(caId))
+            {
+                theRequest.IssuingCertificateAuthorityId = CertificateAuthorityName.FromProjectLocationCaPoolCertificateAuthority(
+                    projectId, locationId, caPool, caId).ToString();
+                _logger.LogTrace($"Set IssuingCertificateAuthority to {theRequest.IssuingCertificateAuthorityId}");
+            }
+
             _logger.MethodExit();
             return theRequest;
         }
+
 
         /// <summary>
         /// Creates a properly formatted X509Extension from an OID and Base64-encoded value.
