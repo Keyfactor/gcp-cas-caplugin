@@ -219,8 +219,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
             if (!string.IsNullOrEmpty(caId))
             {
-                theRequest.IssuingCertificateAuthorityId = CertificateAuthorityName.FromProjectLocationCaPoolCertificateAuthority(
-                    projectId, locationId, caPool, caId).ToString();
+                theRequest.IssuingCertificateAuthorityId =caId.ToString();
                 _logger.LogTrace($"Set IssuingCertificateAuthority to {theRequest.IssuingCertificateAuthorityId}");
             }
 
