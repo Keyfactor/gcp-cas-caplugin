@@ -28,5 +28,5 @@ public interface ICreateCertificateRequestBuilder
     ICreateCertificateRequestBuilder WithEnrollmentProductInfo(EnrollmentProductInfo productInfo);
     ICreateCertificateRequestBuilder WithRequestFormat(RequestFormat requestFormat);
     ICreateCertificateRequestBuilder WithEnrollmentType(EnrollmentType enrollmentType);
-    CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId);
+    CreateCertificateRequest Build(string locationId, string projectId, string caPool,string caId);
 }
