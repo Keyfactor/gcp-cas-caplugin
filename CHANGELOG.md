@@ -1,3 +1,5 @@
+- 1.1.2
+    - Fixed bug where CaId was required, now if not supplied with default to pool settings
 - 1.1.1
     - Fixed bug with Enrollment and Auto Enrollment
     - Fixed issue where only DNS Sans are supported
