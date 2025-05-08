@@ -136,30 +136,49 @@ public class GCPCASClient : IGCPCASClient
         _logger.MethodEntry();
         EnsureClientIsEnabled();
 
-        _logger.LogTrace($"Searching for  CA called {_caId} in the {_caPool} CA pool");
-        CertificateAuthority ca = await _client.GetCertificateAuthorityAsync(new CertificateAuthorityName(_projectId, _locationId, _caPool, _caId));
-        _logger.LogDebug($"Found CA called {ca.CertificateAuthorityName.CertificateAuthorityId} in the {ca.CertificateAuthorityName.CaPoolId} CA pool");
+        if (string.IsNullOrEmpty(_caId))
+        {
+            _logger.LogTrace($"Validating CA Pool {_caPool} since no specific CA ID was provided");
 
-        // Validate that the CA is enabled
+            CaPoolName poolName = new CaPoolName(_projectId, _locationId, _caPool);
+            CaPool pool = await _client.GetCaPoolAsync(poolName);
+
+            if (pool.Tier != CaPool.Types.Tier.Enterprise)
+            {
+                string error = $"CA Pool {_caPool} is in Tier {pool.Tier}, expected {CaPool.Types.Tier.Enterprise}.";
+                _logger.LogError(error);
+                throw new Exception(error);
+            }
+
+            _logger.LogDebug($"CA Pool {_caPool} is Enterprise tier and valid.");
+            _logger.MethodExit();
+            return;
+        }
+
+        _logger.LogTrace($"Searching for CA called {_caId} in CA Pool {_caPool}");
+        CertificateAuthorityName caName = new CertificateAuthorityName(_projectId, _locationId, _caPool, _caId);
+        CertificateAuthority ca = await _client.GetCertificateAuthorityAsync(caName);
+
+        _logger.LogDebug($"Found CA {ca.CertificateAuthorityName.CertificateAuthorityId} in CA Pool {ca.CertificateAuthorityName.CaPoolId}");
+
         if (ca.State != CertificateAuthority.Types.State.Enabled)
         {
-            string error = $"CA called {ca.CertificateAuthorityName.CertificateAuthorityId} in the {ca.CertificateAuthorityName.CaPoolId} CA pool is {ca.State.ToString()}. Expected state was {CertificateAuthority.Types.State.Enabled.ToString()}";
+            string error = $"CA {_caId} is in state {ca.State}. Expected Enabled.";
             _logger.LogError(error);
             throw new Exception(error);
         }
 
-        // Validate that the CA is in the Enterprise tier
         if (ca.Tier != CaPool.Types.Tier.Enterprise)
         {
-            string error = $"CA called {ca.CertificateAuthorityName.CertificateAuthorityId} is in a {ca.Tier.ToString()} Tier CA Pool. {this.ToString()} is only compatible with {CaPool.Types.Tier.Enterprise.ToString()} Tier CA pools.";
+            string error = $"CA {_caId} is in tier {ca.Tier}. Only Enterprise tier is supported.";
             _logger.LogError(error);
             throw new Exception(error);
         }
 
-        _logger.LogDebug($"{typeof(GCPCASClient).ToString()} is compatible with CA called {ca.CertificateAuthorityName.CertificateAuthorityId} in the {ca.CertificateAuthorityName.CaPoolId} CA Pool.");
+        _logger.LogDebug($"{nameof(GCPCASClient)} is compatible with CA {_caId} in Pool {_caPool}.");
         _logger.MethodExit();
-        return;
     }
+
 
     /// <summary>
     /// Downloads all issued certificates from the GCP CAS service and adds them to the provided <see cref="BlockingCollection{T}"/>. This call can be cancelled by passing a <see cref="CancellationToken"/>.
