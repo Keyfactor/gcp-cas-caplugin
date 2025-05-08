@@ -168,7 +168,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - LocationId: {config.LocationId}");
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - ProjectId: {config.ProjectId}");
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAPool: {config.CAPool}");
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAId: {config.CAId}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAId: {config?.CAId}");
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - Enabled: {config.Enabled}");
 
         List<string> missingFields = new List<string>();
@@ -176,7 +176,6 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         if (string.IsNullOrEmpty(config.LocationId)) missingFields.Add(nameof(config.LocationId));
         if (string.IsNullOrEmpty(config.ProjectId)) missingFields.Add(nameof(config.ProjectId));
         if (string.IsNullOrEmpty(config.CAPool)) missingFields.Add(nameof(config.CAPool));
-        if (string.IsNullOrEmpty(config.CAId)) missingFields.Add(nameof(config.CAId));
 
         if (config.Enabled && missingFields.Count > 0)
         {
