@@ -1,12 +1,9 @@
 ﻿/*
 Copyright © 2025 Keyfactor
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,21 +17,17 @@ using Google.Cloud.Security.PrivateCA.V1;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS
 {
-
     public class SubjectAltNamesParser
     {
         public static SubjectAltNames ParseFromDnsList(List<string> dnsSans)
         {
             if (dnsSans == null || dnsSans.Count == 0)
                 return new SubjectAltNames();
-
             var subjectAltNames = new SubjectAltNames();
-
             foreach (var entry in dnsSans)
             {
                 if (string.IsNullOrWhiteSpace(entry))
                     continue;
-
                 if (entry.Contains("@"))  // Email detection
                 {
                     subjectAltNames.EmailAddresses.Add(entry);
@@ -52,9 +45,58 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS
                     subjectAltNames.DnsNames.Add(entry);
                 }
             }
-
             return subjectAltNames;
         }
 
+        public static SubjectAltNames ParseFromTypedDictionary(Dictionary<string, string[]> sanDictionary)
+        {
+            if (sanDictionary == null || sanDictionary.Count == 0)
+                return new SubjectAltNames();
+
+            var subjectAltNames = new SubjectAltNames();
+
+            foreach (var kvp in sanDictionary)
+            {
+                if (kvp.Value == null || kvp.Value.Length == 0)
+                    continue;
+
+                var key = kvp.Key.ToLowerInvariant();
+
+                if (key.Contains("dns") || key.Contains("dnsname"))
+                {
+                    foreach (var value in kvp.Value)
+                    {
+                        if (!string.IsNullOrWhiteSpace(value))
+                            subjectAltNames.DnsNames.Add(value);
+                    }
+                }
+                else if (key.Contains("email") || key.Contains("rfc822name"))
+                {
+                    foreach (var value in kvp.Value)
+                    {
+                        if (!string.IsNullOrWhiteSpace(value))
+                            subjectAltNames.EmailAddresses.Add(value);
+                    }
+                }
+                else if (key.Contains("uri") || key.Contains("uniformresourceidentifier"))
+                {
+                    foreach (var value in kvp.Value)
+                    {
+                        if (!string.IsNullOrWhiteSpace(value))
+                            subjectAltNames.Uris.Add(value);
+                    }
+                }
+                else if (key.Contains("ip") || key.Contains("ipaddress"))
+                {
+                    foreach (var value in kvp.Value)
+                    {
+                        if (!string.IsNullOrWhiteSpace(value))
+                            subjectAltNames.IpAddresses.Add(value);
+                    }
+                }
+            }
+
+            return subjectAltNames;
+        }
     }
 }
