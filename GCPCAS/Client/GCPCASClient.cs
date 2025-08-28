@@ -19,9 +19,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
 using Google.Api.Gax;
 using Google.Api.Gax.Grpc;
 using Google.Api.Gax.ResourceNames;
+using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -38,7 +40,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client;
 /// Class <c>GCPCASClient</c> implements <see cref="IGCPCASClient"/> to provide a standard set of certificate-based operations on a GCP CAS specified by a Project ID, Location ID, CA Pool ID, and CA ID.
 /// </summary>
 ///
-/// <remarks><c>GCPCASClient</c> wraps a <see cref="Google.Cloud.Security.PrivateCA.V1.CertificateAuthorityServiceClient"/>. As such, valid <see langword="GCP Application Default Credentials" href="https://cloud.google.com/docs/authentication/application-default-credentials"/> must be configured before this class is used.</remarks>
+/// <remarks><c>GCPCASClient</c> wraps a <see cref="Google.Cloud.Security.PrivateCA.V1.CertificateAuthorityServiceClient"/>. As such, valid <see langword="GCP Application Default Credentials" href="https://cloud.google.com/docs/authentication/application-default-credentials"/> or Workload Identity Federation must be configured before this class is used.</remarks>
 public class GCPCASClient : IGCPCASClient
 {
     private ILogger _logger;
@@ -69,9 +71,135 @@ public class GCPCASClient : IGCPCASClient
         this._caPool = caPool;
         this._caId = caId;
 
-        _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default gRPC adapter");
-        _client = new CertificateAuthorityServiceClientBuilder().Build();
+        _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} with credential detection");
+        _client = CreateClientWithCredentials();
         _logger.MethodExit();
+    }
+
+    /// <summary>
+    /// Creates a CertificateAuthorityServiceClient with proper credential detection.
+    /// Supports both Workload Identity Federation and traditional service account authentication.
+    /// </summary>
+    /// <returns>A configured CertificateAuthorityServiceClient</returns>
+    private CertificateAuthorityServiceClient CreateClientWithCredentials()
+    {
+        var builder = new CertificateAuthorityServiceClientBuilder();
+
+        try
+        {
+            // Check for explicit credentials path
+            string credentialsPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+
+            GoogleCredential credential;
+
+            if (!string.IsNullOrEmpty(credentialsPath))
+            {
+                _logger.LogDebug($"Using explicit credentials from: {credentialsPath}");
+
+                if (File.Exists(credentialsPath))
+                {
+                    string credentialsJson = File.ReadAllText(credentialsPath);
+                    _logger.LogTrace("Loading credentials from file");
+
+                    // Determine if this is a workload identity configuration
+                    if (credentialsJson.Contains("\"type\": \"external_account\""))
+                    {
+                        _logger.LogDebug("Detected Workload Identity Federation configuration");
+                    }
+                    else if (credentialsJson.Contains("\"type\": \"service_account\""))
+                    {
+                        _logger.LogDebug("Detected Service Account key configuration");
+                    }
+
+                    credential = GoogleCredential.FromFile(credentialsPath);
+                }
+                else
+                {
+                    _logger.LogWarning($"Credentials file not found at {credentialsPath}, falling back to Application Default Credentials");
+                    credential = GoogleCredential.GetApplicationDefault();
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Using Application Default Credentials (ADC)");
+                credential = GoogleCredential.GetApplicationDefault();
+            }
+
+            // Ensure we have the required scopes
+            if (credential.IsCreateScopedRequired)
+            {
+                _logger.LogTrace("Adding required OAuth scopes to credential");
+                credential = credential.CreateScoped("https://www.googleapis.com/auth/cloud-platform");
+            }
+
+            builder.Credential = credential;
+
+            _logger.LogDebug("Successfully configured Google Cloud credentials");
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError($"Failed to configure credentials - Application Default Credentials not found: {ex.Message}");
+            _logger.LogError("Please ensure GOOGLE_APPLICATION_CREDENTIALS is set or Workload Identity is properly configured");
+            throw new Exception("Google Cloud credentials not configured. Please set up Application Default Credentials or Workload Identity Federation.", ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError($"Access denied when loading credentials: {ex.Message}");
+            throw new Exception("Access denied when loading Google Cloud credentials. Please check file permissions.", ex);
+        }
+        catch (FileNotFoundException ex)
+        {
+            _logger.LogError($"Credentials file not found: {ex.Message}");
+            throw new Exception("Google Cloud credentials file not found. Please check the GOOGLE_APPLICATION_CREDENTIALS path.", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Unexpected error configuring credentials: {ex.Message}");
+            _logger.LogDebug("Falling back to default client builder");
+            // Fall back to default behavior if credential setup fails
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Validates that the configured credentials can successfully authenticate with GCP.
+    /// </summary>
+    /// <returns>Task that completes when validation is successful</returns>
+    /// <exception cref="Exception">Thrown when credential validation fails</exception>
+    private async Task ValidateCredentials()
+    {
+        try
+        {
+            _logger.LogDebug("Testing credential configuration by attempting to list CA pools");
+
+            // Try to make a simple API call to validate credentials
+            var locationName = new LocationName(_projectId, _locationId);
+            var listRequest = new ListCaPoolsRequest
+            {
+                ParentAsLocationName = locationName,
+                PageSize = 1 // Just need to verify we can authenticate
+            };
+
+            await _client.ListCaPoolsAsync(listRequest);
+
+            _logger.LogDebug("Credentials validated successfully");
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Unauthenticated)
+        {
+            _logger.LogError($"Authentication failed: {ex.Message}");
+            throw new Exception("Google Cloud authentication failed. Please verify your credentials configuration.", ex);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.PermissionDenied)
+        {
+            _logger.LogError($"Permission denied: {ex.Message}");
+            throw new Exception("Permission denied accessing Google Cloud resources. Please verify your service account has the required permissions.", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Credential validation failed: {ex.Message}");
+            throw new Exception("Failed to validate Google Cloud credentials.", ex);
+        }
     }
 
     public override string ToString()
@@ -83,16 +211,16 @@ public class GCPCASClient : IGCPCASClient
     /// Enables the <see cref="GCPCASClient"/> client. This must be called before any other operations are performed.
     /// </summary>
     /// <returns></returns>
-    public Task Enable()
+    public async Task Enable()
     {
         _logger.MethodEntry();
         if (!_clientIsEnabled)
         {
             _logger.LogDebug($"Enabling GCPCAS client {this.ToString()}");
+            await ValidateCredentials(); // Validate credentials during enable
             _clientIsEnabled = true;
         }
         _logger.MethodExit();
-        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -158,7 +158,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         return (int)EndEntityStatus.REVOKED;
     }
 
-    private void GCPCASClientFromCAConnectionData(Dictionary<string, object> connectionData)
+    private async void GCPCASClientFromCAConnectionData(Dictionary<string, object> connectionData)
     {
         _logger.MethodEntry();
         _logger.LogDebug($"Validating GCP CAS CA Connection properties");
@@ -194,11 +194,20 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
         if (config.Enabled)
         {
-            Client.Enable();
+            try
+            {
+                await Client.Enable();
+                _logger.LogDebug("GCPCASClient enabled successfully with credential validation");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Failed to enable GCPCASClient: {ex.Message}");
+                throw new Exception("Failed to initialize GCP CAS client. Please verify your authentication configuration.", ex);
+            }
         }
         else
         {
-            Client.Disable();
+            await Client.Disable();
         }
         _logger.MethodExit();
     }
