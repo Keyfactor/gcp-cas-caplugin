@@ -171,6 +171,13 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAId: {config?.CAId}");
         _logger.LogTrace($"GCPCASClientFromCAConnectionData - Enabled: {config.Enabled}");
 
+        if (!config.Enabled)
+        {
+            _logger.LogWarning($"The CA is currently in the Disabled state. It must be Enabled to perform operations. Skipping config validation and GCPCASClient creation...");
+            _logger.MethodExit();
+            return;
+        }
+
         List<string> missingFields = new List<string>();
 
         if (string.IsNullOrEmpty(config.LocationId)) missingFields.Add(nameof(config.LocationId));
