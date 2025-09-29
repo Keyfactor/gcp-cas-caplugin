@@ -36,6 +36,8 @@ public class GCPCASCAPlugin : IAnyCAPlugin
     IGCPCASClient Client { get; set; }
     private bool _gcpCasClientWasInjected = false;
 
+    private GCPCASPluginConfig.Config _config;
+
     public GCPCASCAPlugin()
     {
         // Explicit default constructor
@@ -80,9 +82,10 @@ public class GCPCASCAPlugin : IAnyCAPlugin
     public async Task Ping()
     {
         _logger.MethodEntry();
-        if (!Client.IsEnabled())
+        if (!_config.Enabled)
         {
-            _logger.LogDebug("GCPCASClient is disabled. Skipping Ping");
+            _logger.LogWarning($"The CA is currently in the Disabled state. It must be Enabled to perform operations. Skipping connectivity test...");
+            _logger.MethodExit(LogLevel.Trace);
             return;
         }
         _logger.LogDebug("Pinging GCP CAS to validate connection");
@@ -163,15 +166,15 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         _logger.MethodEntry();
         _logger.LogDebug($"Validating GCP CAS CA Connection properties");
         var rawData = JsonSerializer.Serialize(connectionData);
-        GCPCASPluginConfig.Config config = JsonSerializer.Deserialize<GCPCASPluginConfig.Config>(rawData);
+        _config = JsonSerializer.Deserialize<GCPCASPluginConfig.Config>(rawData);
 
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - LocationId: {config.LocationId}");
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - ProjectId: {config.ProjectId}");
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAPool: {config.CAPool}");
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAId: {config?.CAId}");
-        _logger.LogTrace($"GCPCASClientFromCAConnectionData - Enabled: {config.Enabled}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - LocationId: {_config.LocationId}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - ProjectId: {_config.ProjectId}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAPool: {_config.CAPool}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - CAId: {_config?.CAId}");
+        _logger.LogTrace($"GCPCASClientFromCAConnectionData - Enabled: {_config.Enabled}");
 
-        if (!config.Enabled)
+        if (!_config.Enabled)
         {
             _logger.LogWarning($"The CA is currently in the Disabled state. It must be Enabled to perform operations. Skipping config validation and GCPCASClient creation...");
             _logger.MethodExit();
@@ -180,11 +183,11 @@ public class GCPCASCAPlugin : IAnyCAPlugin
 
         List<string> missingFields = new List<string>();
 
-        if (string.IsNullOrEmpty(config.LocationId)) missingFields.Add(nameof(config.LocationId));
-        if (string.IsNullOrEmpty(config.ProjectId)) missingFields.Add(nameof(config.ProjectId));
-        if (string.IsNullOrEmpty(config.CAPool)) missingFields.Add(nameof(config.CAPool));
+        if (string.IsNullOrEmpty(_config.LocationId)) missingFields.Add(nameof(_config.LocationId));
+        if (string.IsNullOrEmpty(_config.ProjectId)) missingFields.Add(nameof(_config.ProjectId));
+        if (string.IsNullOrEmpty(_config.CAPool)) missingFields.Add(nameof(_config.CAPool));
 
-        if (config.Enabled && missingFields.Count > 0)
+        if (_config.Enabled && missingFields.Count > 0)
         {
             throw new ArgumentException($"The following required fields are missing or empty: {string.Join(", ", missingFields)}");
         }
@@ -196,10 +199,10 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         else
         {
             _logger.LogDebug("Creating new GCPCASClient instance.");
-            Client = new GCPCASClient(config.LocationId, config.ProjectId, config.CAPool, config.CAId);
+            Client = new GCPCASClient(_config.LocationId, _config.ProjectId, _config.CAPool, _config.CAId);
         }
 
-        if (config.Enabled)
+        if (_config.Enabled)
         {
             Client.Enable();
         }
