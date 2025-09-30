@@ -1,7 +1,8 @@
 {
     "$schema": "https://keyfactor.github.io/v2/integration-manifest-schema.json",
     "name": "GCP CAS AnyCA REST plugin",
-    "release_dir": "GCPCAS/bin/Release/net6.0",
+    "release_dir": "GCPCAS/bin/Release",
+    "release_project": "GCPCAS/GCPCAS.csproj",
     "description": "AnyCA Gateway REST plugin that extends Google Cloud Platform Certificate Authority Service to Keyfactor Command",
     "status": "production",
     "integration_type": "anyca-plugin",

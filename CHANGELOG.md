@@ -1,3 +1,5 @@
+- 1.2.0
+    - Added Enable Flag
 - 1.1.1
     - Fixed bug with Enrollment and Auto Enrollment
     - Fixed issue where only DNS Sans are supported
