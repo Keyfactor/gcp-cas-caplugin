@@ -187,6 +187,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         if (string.IsNullOrEmpty(_config.ProjectId)) missingFields.Add(nameof(_config.ProjectId));
         if (string.IsNullOrEmpty(_config.CAPool)) missingFields.Add(nameof(_config.CAPool));
 
+
         if (_config.Enabled && missingFields.Count > 0)
         {
             throw new ArgumentException($"The following required fields are missing or empty: {string.Join(", ", missingFields)}");

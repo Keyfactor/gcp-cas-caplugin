@@ -1,6 +1,10 @@
 - 1.2.0
     - Added Enable Flag
     - Dual Build Support
+- 1.1.3
+    - Fixed bug requiring FQDN to have "."
+- 1.1.2
+    - Fixed bug where CaId was required, now if not supplied with default to pool settings
 - 1.1.1
     - Fixed bug with Enrollment and Auto Enrollment
     - Fixed issue where only DNS Sans are supported

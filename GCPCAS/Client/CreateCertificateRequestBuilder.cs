@@ -14,9 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Google.Cloud.Security.PrivateCA.V1;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
@@ -24,6 +21,9 @@ using Keyfactor.AnyGateway.Extensions;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using X509Extension = Google.Cloud.Security.PrivateCA.V1.X509Extension;
 
 namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
@@ -35,7 +35,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
         private string _csrString;
         private string _certificateTemplate;
         private string _subject;
-        private List<string> _dnsSans;
+        private Dictionary<string, string[]> _sans;
         private int _certificateLifetimeDays = GCPCASPluginConfig.DefaultCertificateLifetime;
 
         // Store additional extensions
@@ -120,17 +120,20 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
         public ICreateCertificateRequestBuilder WithSans(Dictionary<string, string[]> san)
         {
             _logger.MethodEntry();
-            _dnsSans = new List<string>();
+            _sans = new Dictionary<string, string[]>();
 
             if (san != null && san.Count > 0)
             {
-                foreach (var key in san.Keys)
+                foreach (var kvp in san)
                 {
-                    _logger.LogTrace($"San Value {san[key]}");
-                    _dnsSans.AddRange(san[key]);
+                    if (kvp.Value != null && kvp.Value.Length > 0)
+                    {
+                        _logger.LogTrace($"San Type: {kvp.Key}, Values: {string.Join(", ", kvp.Value)}");
+                        _sans[kvp.Key] = kvp.Value;
+                    }
                 }
 
-                _logger.LogTrace($"Found {_dnsSans.Count} SANs");
+                _logger.LogTrace($"Found {_sans.Count} SAN types");
             }
             _logger.MethodExit();
             return this;
@@ -148,7 +151,7 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
             return this;
         }
 
-        public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId)
+        public CreateCertificateRequest Build(string locationId, string projectId, string caPool, string caId = null)
         {
             _logger.MethodEntry();
 
@@ -165,10 +168,10 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                 certConfig.SubjectConfig.Subject = parsedSubject;
             }
 
-            if (_dnsSans.Count > 0)
+            if (_sans != null && _sans.Count > 0)
             {
-                _logger.LogTrace($"Getting Subject Alt Names");
-                SubjectAltNames parsedSubjectAltNames = SubjectAltNamesParser.ParseFromDnsList(_dnsSans);
+                _logger.LogTrace($"Getting Subject Alt Names from typed dictionary");
+                SubjectAltNames parsedSubjectAltNames = SubjectAltNamesParser.ParseFromTypedDictionary(_sans);
                 _logger.LogTrace($"Parsed AltNames {JsonConvert.SerializeObject(parsedSubjectAltNames)}");
                 certConfig.SubjectConfig.SubjectAltName = parsedSubjectAltNames;
             }
@@ -188,7 +191,6 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
             certConfig.X509Config = new X509Parameters();
 
-            // Add Additional Extensions if present
             if (_additionalExtensions.Count > 0)
             {
                 _logger.LogTrace($"Adding additional Extensions");
@@ -218,9 +220,16 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                 Certificate = theCertificate,
             };
 
+            if (!string.IsNullOrEmpty(caId))
+            {
+                theRequest.IssuingCertificateAuthorityId = caId.ToString();
+                _logger.LogTrace($"Set IssuingCertificateAuthority to {theRequest.IssuingCertificateAuthorityId}");
+            }
+
             _logger.MethodExit();
             return theRequest;
         }
+
 
         /// <summary>
         /// Creates a properly formatted X509Extension from an OID and Base64-encoded value.
