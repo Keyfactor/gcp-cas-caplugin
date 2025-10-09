@@ -1,3 +1,6 @@
+- 1.2.0
+    - Added Enable Flag
+    - Dual Build Support
 - 1.1.3
     - Fixed bug requiring FQDN to have "."
 - 1.1.2
