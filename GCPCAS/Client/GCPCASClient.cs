@@ -214,6 +214,13 @@ public class GCPCASClient : IGCPCASClient
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
         };
 
+        string caFilter = null;
+        if (!string.IsNullOrEmpty(_caId))
+        {
+            caFilter = _caId;
+            _logger.LogDebug($"Will filter certificates client-side by issuing CA ID: {caFilter}");
+        }
+
         if (issuedAfter != null)
         {
             Timestamp ts = Timestamp.FromDateTime(issuedAfter.Value.ToUniversalTime());
@@ -242,6 +249,15 @@ public class GCPCASClient : IGCPCASClient
 
                 foreach (Certificate certificate in response.Certificates)
                 {
+                    if (caFilter != null)
+                    {
+                        CertificateAuthorityName issuer = CertificateAuthorityName.Parse(certificate.IssuerCertificateAuthority);
+                        if (issuer.CertificateAuthorityId != caFilter)
+                        {
+                            _logger.LogTrace($"Skipping certificate {certificate.CertificateName.CertificateId} - issued by {issuer.CertificateAuthorityId}, not {caFilter}");
+                            continue;
+                        }
+                    }
                     certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
