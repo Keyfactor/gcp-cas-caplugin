@@ -209,10 +209,19 @@ public class GCPCASClient : IGCPCASClient
 
         _logger.LogTrace($"Setting up {typeof(ListCertificatesRequest).ToString()} with {this.ToString()}");
 
-        ListCertificatesRequest request = new ListCertificatesRequest
+        ListCertificatesRequest request = new ListCertificatesRequest();
+
+        if (!string.IsNullOrEmpty(_caId))
         {
-            ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
-        };
+            CertificateAuthorityName caName = new CertificateAuthorityName(_projectId, _locationId, _caPool, _caId);
+            request.Parent = caName.ToString();
+            _logger.LogDebug($"Listing certificates at CA-level: {request.Parent}");
+        }
+        else
+        {
+            request.ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool);
+            _logger.LogDebug($"Listing certificates at Pool-level: {request.ParentAsCaPoolName}");
+        }
 
         if (issuedAfter != null)
         {

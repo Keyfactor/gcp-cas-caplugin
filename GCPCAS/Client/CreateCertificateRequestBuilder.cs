@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Keyfactor
+Copyright ï¿½ 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -215,15 +215,20 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
 
             CreateCertificateRequest theRequest = new CreateCertificateRequest
             {
-                ParentAsCaPoolName = caPoolName,
                 CertificateId = Guid.NewGuid().ToString(),
                 Certificate = theCertificate,
             };
 
             if (!string.IsNullOrEmpty(caId))
             {
-                theRequest.IssuingCertificateAuthorityId = caId.ToString();
-                _logger.LogTrace($"Set IssuingCertificateAuthority to {theRequest.IssuingCertificateAuthorityId}");
+                CertificateAuthorityName caName = new CertificateAuthorityName(projectId, locationId, caPool, caId);
+                theRequest.Parent = caName.ToString();
+                _logger.LogTrace($"Set Parent to CA-level: {theRequest.Parent}");
+            }
+            else
+            {
+                theRequest.ParentAsCaPoolName = caPoolName;
+                _logger.LogTrace($"Set Parent to Pool-level: {theRequest.ParentAsCaPoolName}");
             }
 
             _logger.MethodExit();
