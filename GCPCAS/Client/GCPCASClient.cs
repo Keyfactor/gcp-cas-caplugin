@@ -214,26 +214,18 @@ public class GCPCASClient : IGCPCASClient
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
         };
 
-        List<string> filters = new List<string>();
-
+        string caFilter = null;
         if (!string.IsNullOrEmpty(_caId))
         {
-            CertificateAuthorityName caName = new CertificateAuthorityName(_projectId, _locationId, _caPool, _caId);
-            filters.Add($"issuing_certificate_authority_id=\"{caName.ToString()}\"");
-            _logger.LogDebug($"Filtering certificates by CA: {_caId}");
+            caFilter = new CertificateAuthorityName(_projectId, _locationId, _caPool, _caId).ToString();
+            _logger.LogDebug($"Will filter certificates client-side by issuing CA: {caFilter}");
         }
 
         if (issuedAfter != null)
         {
             Timestamp ts = Timestamp.FromDateTime(issuedAfter.Value.ToUniversalTime());
-            filters.Add($"update_time >= {ts}");
             _logger.LogDebug($"Filtering issued certificates by update_time >= {ts}");
-        }
-
-        if (filters.Count > 0)
-        {
-            request.Filter = string.Join(" AND ", filters);
-            _logger.LogDebug($"Applied filter: {request.Filter}");
+            request.Filter = $"update_time >= {ts}";
         }
 
         _logger.LogTrace($"Setting up {typeof(CallSettings).ToString()} with provided {typeof(CancellationToken).ToString()} {this.ToString()}");
@@ -257,6 +249,11 @@ public class GCPCASClient : IGCPCASClient
 
                 foreach (Certificate certificate in response.Certificates)
                 {
+                    if (caFilter != null && certificate.IssuerCertificateAuthority != caFilter)
+                    {
+                        _logger.LogTrace($"Skipping certificate {certificate.CertificateName.CertificateId} - issued by {certificate.IssuerCertificateAuthority}, not {caFilter}");
+                        continue;
+                    }
                     certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
