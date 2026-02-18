@@ -33,6 +33,7 @@ public class GCPCASPluginConfig
         public const string CAPool = "CAPool";
         public const string CAId = "CAId";
         public const string Enabled = "Enabled";
+        public const string ServiceAccountKey = "ServiceAccountKey";
     }
 
     public class Config
@@ -42,6 +43,7 @@ public class GCPCASPluginConfig
         public string CAPool { get; set; }
         public string CAId { get; set; }
         public bool Enabled { get; set; }
+        public string ServiceAccountKey { get; set; }
     }
 
     public static class EnrollmentParametersConstants
@@ -87,6 +89,13 @@ public class GCPCASPluginConfig
                 Hidden = false,
                 DefaultValue = true,
                 Type = "Boolean"
+            },
+            [ConfigConstants.ServiceAccountKey] = new PropertyConfigInfo()
+            {
+                Comments = "Optional JSON service account key for GCP authentication. When provided, this is used instead of Application Default Credentials (ADC). This is recommended for containerized environments where mounting a credentials file is not practical. Leave empty to use ADC.",
+                Hidden = false,
+                DefaultValue = "",
+                Type = "String"
             },
         };
     }
