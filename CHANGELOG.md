@@ -1,3 +1,5 @@
+- 1.3.0
+  - SaaS containerization changes with Google Credentials
 - 1.2.2
   - Fixed Sync Issues at CA Level, was ignoring and always syncing at pool level
 - 1.2.1
