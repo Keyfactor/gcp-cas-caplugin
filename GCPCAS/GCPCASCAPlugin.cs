@@ -200,7 +200,7 @@ public class GCPCASCAPlugin : IAnyCAPlugin
         else
         {
             _logger.LogDebug("Creating new GCPCASClient instance.");
-            Client = new GCPCASClient(_config.LocationId, _config.ProjectId, _config.CAPool, _config.CAId);
+            Client = new GCPCASClient(_config.LocationId, _config.ProjectId, _config.CAPool, _config.CAId, _config.ServiceAccountKey);
         }
 
         if (_config.Enabled)
