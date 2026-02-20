@@ -93,7 +93,7 @@ public class GCPCASPluginConfig
             [ConfigConstants.ServiceAccountKey] = new PropertyConfigInfo()
             {
                 Comments = "Optional JSON service account key for GCP authentication. When provided, this is used instead of Application Default Credentials (ADC). This is recommended for containerized environments where mounting a credentials file is not practical. Leave empty to use ADC.",
-                Hidden = false,
+                Hidden = true,
                 DefaultValue = "",
                 Type = "Secret"
             },
