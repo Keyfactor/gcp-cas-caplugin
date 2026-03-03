@@ -58,7 +58,8 @@ public class GCPCASClient : IGCPCASClient
     /// <param name="projectId">The GCP project ID where the target GCP CAS CA is located</param>
     /// <param name="caPool">The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name <c>projects/my-project/locations/us-central1/caPools/my-pool</c>, this field should be set to <c>my-pool</c></param>
     /// <param name="caId">The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name <c>projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca</c>, this field should be set to <c>my-ca</c>.</param>
-    public GCPCASClient(string locationId, string projectId, string caPool, string caId)
+    /// <param name="serviceAccountKey">Optional JSON service account key. When provided, used instead of Application Default Credentials.</param>
+    public GCPCASClient(string locationId, string projectId, string caPool, string caId, string serviceAccountKey = null)
     {
         _logger = LogHandler.GetClassLogger<GCPCASClient>();
         _logger.MethodEntry();
@@ -69,8 +70,18 @@ public class GCPCASClient : IGCPCASClient
         this._caPool = caPool;
         this._caId = caId;
 
-        _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using the Default gRPC adapter");
-        _client = new CertificateAuthorityServiceClientBuilder().Build();
+        var builder = new CertificateAuthorityServiceClientBuilder();
+        if (!string.IsNullOrEmpty(serviceAccountKey))
+        {
+            _logger.LogTrace("Using provided service account key JSON for authentication");
+            builder.JsonCredentials = serviceAccountKey;
+        }
+        else
+        {
+            _logger.LogTrace($"Setting up a {typeof(CertificateAuthorityServiceClient).ToString()} using Application Default Credentials");
+        }
+
+        _client = builder.Build();
         _logger.MethodExit();
     }
 
@@ -214,6 +225,13 @@ public class GCPCASClient : IGCPCASClient
             ParentAsCaPoolName = new CaPoolName(_projectId, _locationId, _caPool),
         };
 
+        string caFilter = null;
+        if (!string.IsNullOrEmpty(_caId))
+        {
+            caFilter = _caId;
+            _logger.LogDebug($"Will filter certificates client-side by issuing CA ID: {caFilter}");
+        }
+
         if (issuedAfter != null)
         {
             Timestamp ts = Timestamp.FromDateTime(issuedAfter.Value.ToUniversalTime());
@@ -242,6 +260,15 @@ public class GCPCASClient : IGCPCASClient
 
                 foreach (Certificate certificate in response.Certificates)
                 {
+                    if (caFilter != null)
+                    {
+                        CertificateAuthorityName issuer = CertificateAuthorityName.Parse(certificate.IssuerCertificateAuthority);
+                        if (issuer.CertificateAuthorityId != caFilter)
+                        {
+                            _logger.LogTrace($"Skipping certificate {certificate.CertificateName.CertificateId} - issued by {issuer.CertificateAuthorityId}, not {caFilter}");
+                            continue;
+                        }
+                    }
                     certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");

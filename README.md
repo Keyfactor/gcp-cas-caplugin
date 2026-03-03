@@ -62,9 +62,19 @@ The GCP CAS AnyCA Gateway REST plugin is supported by Keyfactor for Keyfactor cu
 
 ## Requirements
 
-### Application Default Credentials
+### GCP Authentication
 
-The GCP CAS AnyCA Gateway REST plugin connects to and authenticates with GCP CAS implicitly using [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials). This means that all authentication-related configuration of the GCP CAS AnyCA Gateway REST plugin is implied by the environment where the AnyCA Gateway REST itself is running.
+The GCP CAS AnyCA Gateway REST plugin supports two methods for authenticating with GCP CAS:
+
+#### Option 1: Service Account Key via CA Connection Configuration (Recommended for Containers)
+
+The plugin accepts an optional **ServiceAccountKey** field in the CA Connection configuration. When provided, the JSON service account key is used directly for authentication without requiring any credential files on the filesystem. This is the recommended approach for containerized deployments (e.g., Docker, Kubernetes) where mounting credential files is not practical.
+
+To use this method, paste the full JSON contents of a GCP service account key into the **ServiceAccountKey** field in the CA Connection tab. In Kubernetes, the service account key JSON can be stored as a Secret and injected via the Keyfactor configuration API.
+
+#### Option 2: Application Default Credentials (ADC)
+
+If the **ServiceAccountKey** field is left empty, the plugin falls back to [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials). This means that all authentication-related configuration is implied by the environment where the AnyCA Gateway REST itself is running.
 
 Please refer to [Google's documentation](https://cloud.google.com/docs/authentication/provide-credentials-adc) to configure ADC on the server running the AnyCA Gateway REST.
 
@@ -75,6 +85,8 @@ Please refer to [Google's documentation](https://cloud.google.com/docs/authentic
 > 1. The service account that the AnyCA Gateway REST runs under must have read permission to the GCP credential JSON file.
 > 2. You must set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable for the Windows Service running the AnyCA Gateway REST using the [Windows registry editor](https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/windows-registry-advanced-users).
 >     * Refer to the [HKLM\SYSTEM\CurrentControlSet\Services Registry Tree](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree) docs
+>
+> For containerized environments running on GCP (e.g., GKE), [Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) can be used instead, which requires no credential files or environment variables.
 
 If the selected ADC mechanism is [Service Account Key](https://cloud.google.com/docs/authentication/provide-credentials-adc#wlif-key), it's recommended that a [custom role is created](https://cloud.google.com/iam/docs/creating-custom-roles) that has the following minimum permissions:
 
@@ -140,6 +152,7 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
         * **CAPool** - The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name `projects/my-project/locations/us-central1/caPools/my-pool`, this field should be set to `my-pool` 
         * **CAId** - The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name `projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca`, this field should be set to `my-ca`. 
         * **Enabled** - Flag to Enable or Disable gateway functionality. Disabling is primarily used to allow creation of the CA prior to configuration information being available. 
+        * **ServiceAccountKey** - Optional JSON service account key for GCP authentication. When provided, this is used instead of Application Default Credentials (ADC). This is recommended for containerized environments where mounting a credentials file is not practical. Leave empty to use ADC. 
 
 2. Define [Certificate Profiles](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCP-Gateway.htm) and [Certificate Templates](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Gateway.htm) for the Certificate Authority as required. One Certificate Profile must be defined per Certificate Template. It's recommended that each Certificate Profile be named after the Product ID.
 
