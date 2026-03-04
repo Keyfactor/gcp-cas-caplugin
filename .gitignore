@@ -352,3 +352,4 @@ healthchecksdb
 logs
 *.pem
 *.crt
+.claude/settings.local.json
