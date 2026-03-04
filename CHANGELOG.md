@@ -1,3 +1,5 @@
+- 1.2.3
+  - Fixed Sans Being passed through Extensions Data, Google does not like this.
 - 1.2.2
   - Fixed Sync Issues at CA Level, was ignoring and always syncing at pool level
 - 1.2.1
