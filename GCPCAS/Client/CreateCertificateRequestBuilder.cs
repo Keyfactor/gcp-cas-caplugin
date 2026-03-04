@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Keyfactor
+Copyright ï¿½ 2025 Keyfactor
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -85,12 +85,14 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                         string base64Value = param.Value;
 
                         _logger.LogTrace($"Loggin oid and value {oid} {base64Value}");
-
-                        var extension = CreateX509Extension(oid, base64Value);
-                        if (extension != null)
+                        if (oid != "2.5.29.17") //can't send Sans as an extension to google, they do not like this and you will get an error
                         {
-                            _logger.LogTrace($"Adding Extension");
-                            _additionalExtensions.Add(extension);
+                            var extension = CreateX509Extension(oid, base64Value);
+                            if (extension != null)
+                            {
+                                _logger.LogTrace($"Adding Extension");
+                                _additionalExtensions.Add(extension);
+                            }
                         }
                     }
                 }
