@@ -1,3 +1,6 @@
+- 1.3.2
+  - Fixed Sans Being passed through Extensions Data, Google does not like this.
+- 1.3.1
 - 1.3.0
   - SaaS containerization changes with Google Credentials
 - 1.2.2
