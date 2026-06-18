@@ -17,6 +17,7 @@ limitations under the License.
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Api.Gax;
@@ -297,6 +298,7 @@ public class GCPCASClient : IGCPCASClient
         {
             certificatesBuffer.CompleteAdding();
             _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
+            _logger.LogInformation($"[SYNC-DIAG] Handed {numberOfCertificates} certificate(s) to the AnyCA Gateway buffer. Review the per-record [SYNC-DIAG] lines above to confirm each carries a parseable fingerprint and NotBefore - these are the values the Gateway must surface to Command on /v2/certificate/search.");
         }
         _logger.MethodExit();
         return numberOfCertificates;
@@ -356,16 +358,63 @@ public class GCPCASClient : IGCPCASClient
             status = EndEntityStatus.REVOKED;
             revocationReason = (int)certificate.RevocationDetails.RevocationState;
         }
+
+        string caRequestId = certificate.CertificateName.CertificateId;
+        string pem = certificate.PemCertificate;
+
+        // DIAGNOSTIC: the AnyCA Gateway derives the synced certificate's fingerprint and notBefore
+        // (the fields Command's sync gates on) by parsing the content we put in AnyCAPluginCertificate.Certificate.
+        // Log the shape of that content and the metadata that *should* be derivable from it, so we can
+        // compare against what the Gateway stores / returns to Command on the /v2/certificate/search response.
+        LogCertificateContentDiagnostics(caRequestId, pem, status, revocationDate, revocationReason);
+
         _logger.MethodExit();
         return new AnyCAPluginCertificate
         {
-            CARequestID = certificate.CertificateName.CertificateId,
-            Certificate = certificate.PemCertificate,
+            CARequestID = caRequestId,
+            Certificate = pem,
             Status = (int)status,
             ProductID = productId,
             RevocationDate = revocationDate,
             RevocationReason = revocationReason,
         };
+    }
+
+    /// <summary>
+    /// Emits detailed diagnostics about the certificate content being handed to the AnyCA Gateway.
+    /// The Gateway parses <see cref="AnyCAPluginCertificate.Certificate"/> to populate the fingerprint and
+    /// notBefore fields that Command's incremental sync (IssuedDateSyncPartitionTracker) gates on. Logging
+    /// the raw shape and the parsed metadata here pinpoints whether the plugin is the source of empty/zero
+    /// values seen downstream.
+    /// </summary>
+    private void LogCertificateContentDiagnostics(string caRequestId, string pem, EndEntityStatus status, DateTime? revocationDate, int? revocationReason)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(pem))
+            {
+                _logger.LogWarning($"[SYNC-DIAG] CARequestID={caRequestId}: PemCertificate is NULL or EMPTY - the Gateway will have no content to derive fingerprint/notBefore from. status={status} revoked={(revocationDate != null)}");
+                return;
+            }
+
+            bool hasPemArmor = pem.Contains("-----BEGIN");
+            _logger.LogTrace($"[SYNC-DIAG] CARequestID={caRequestId}: PemCertificate length={pem.Length}, hasPemArmor={hasPemArmor}, first40='{pem.Substring(0, Math.Min(40, pem.Length)).Replace("\n", "\\n").Replace("\r", "\\r")}'");
+
+            // Parse exactly what the Gateway would parse to derive metadata.
+            using var parsed = X509Certificate2.CreateFromPem(pem);
+            long notBeforeEpochMs = new DateTimeOffset(parsed.NotBefore.ToUniversalTime()).ToUnixTimeMilliseconds();
+            long notAfterEpochMs = new DateTimeOffset(parsed.NotAfter.ToUniversalTime()).ToUnixTimeMilliseconds();
+
+            _logger.LogDebug(
+                $"[SYNC-DIAG] CARequestID={caRequestId}: parsed OK -> Thumbprint(fingerprint)={parsed.Thumbprint}, " +
+                $"SerialNumber={parsed.SerialNumber}, Subject='{parsed.Subject}', " +
+                $"NotBefore={parsed.NotBefore:o} (epochMs={notBeforeEpochMs}), NotAfter={parsed.NotAfter:o} (epochMs={notAfterEpochMs}), " +
+                $"status={status}, revoked={(revocationDate != null)}, revocationReason={revocationReason}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[SYNC-DIAG] CARequestID={caRequestId}: FAILED to parse PemCertificate into an X509Certificate2 - the Gateway will likely store an empty fingerprint / notBefore=0 for this record. Error: {ex.Message}");
+        }
     }
     /// <summary>
     /// Enrolls a certificate using a configured <see cref="ICreateCertificateRequestBuilder"/> and returns the result.
