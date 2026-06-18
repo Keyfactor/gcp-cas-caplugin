@@ -248,6 +248,7 @@ public class GCPCASClient : IGCPCASClient
 
         int pageNumber = 0;
         int numberOfCertificates = 0;
+        int skippedCertificates = 0;
 
         try
         {
@@ -270,7 +271,21 @@ public class GCPCASClient : IGCPCASClient
                             continue;
                         }
                     }
-                    certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
+                    AnyCAPluginCertificate pluginCertificate = AnyCAPluginCertificateFromGCPCertificate(certificate);
+
+                    // Mirror the subject handling the AnyCA Gateway performs when it builds the
+                    // /v2/certificate/search response: `new X509Name(true, netCert.Subject)`. That call throws
+                    // on subjects BouncyCastle cannot re-parse from .NET's string form, which 500s the entire
+                    // gateway search page and aborts Command's CA sync. Skip such certs here so they never enter
+                    // the gateway database and can never break the downstream sync.
+                    if (!GatewayCanParseSubject(pluginCertificate.Certificate, out string subject, out string skipReason))
+                    {
+                        skippedCertificates++;
+                        _logger.LogWarning($"[SYNC-SKIP] Skipping certificate {pluginCertificate.CARequestID} - its subject would fail the AnyCA Gateway X509Name parse and abort the sync. Subject='{subject}', reason: {skipReason}");
+                        continue;
+                    }
+
+                    certificatesBuffer.Add(pluginCertificate);
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
                 }
@@ -298,7 +313,7 @@ public class GCPCASClient : IGCPCASClient
         {
             certificatesBuffer.CompleteAdding();
             _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
-            _logger.LogInformation($"[SYNC-DIAG] Handed {numberOfCertificates} certificate(s) to the AnyCA Gateway buffer. Review the per-record [SYNC-DIAG] lines above to confirm each carries a parseable fingerprint and NotBefore - these are the values the Gateway must surface to Command on /v2/certificate/search.");
+            _logger.LogInformation($"[SYNC-DIAG] Handed {numberOfCertificates} certificate(s) to the AnyCA Gateway buffer; skipped {skippedCertificates} certificate(s) with subjects the gateway cannot parse. Review the per-record [SYNC-DIAG]/[SYNC-SKIP] lines above for details.");
         }
         _logger.MethodExit();
         return numberOfCertificates;
@@ -414,6 +429,36 @@ public class GCPCASClient : IGCPCASClient
         catch (Exception ex)
         {
             _logger.LogWarning($"[SYNC-DIAG] CARequestID={caRequestId}: FAILED to parse PemCertificate into an X509Certificate2 - the Gateway will likely store an empty fingerprint / notBefore=0 for this record. Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Mirrors the subject parsing the AnyCA Gateway performs when it builds the /v2/certificate/search
+    /// response: <c>new Org.BouncyCastle.Asn1.X509.X509Name(true, netCert.Subject)</c>. That call throws on
+    /// subjects BouncyCastle cannot re-parse from .NET's string representation, which 500s the entire gateway
+    /// search page and aborts Command's CA sync. Returning <see langword="false"/> lets the sync skip the
+    /// certificate so it never enters the gateway database and can never break the downstream Command sync.
+    /// </summary>
+    /// <param name="pem">The PEM certificate content that will be handed to the gateway.</param>
+    /// <param name="subject">The parsed .NET subject string, when available (for logging).</param>
+    /// <param name="failureReason">The exception message when parsing fails.</param>
+    /// <returns><see langword="true"/> if the gateway can parse the subject; otherwise <see langword="false"/>.</returns>
+    private bool GatewayCanParseSubject(string pem, out string subject, out string failureReason)
+    {
+        subject = null;
+        failureReason = null;
+        try
+        {
+            using X509Certificate2 netCert = X509Certificate2.CreateFromPem(pem);
+            subject = netCert.Subject;
+            // This is the exact operation the gateway performs and that throws on problematic subjects.
+            _ = new Org.BouncyCastle.Asn1.X509.X509Name(true, subject);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            failureReason = ex.Message;
+            return false;
         }
     }
     /// <summary>
