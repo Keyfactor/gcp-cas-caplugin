@@ -17,6 +17,7 @@ limitations under the License.
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Api.Gax;
@@ -247,6 +248,7 @@ public class GCPCASClient : IGCPCASClient
 
         int pageNumber = 0;
         int numberOfCertificates = 0;
+        int skippedCertificates = 0;
 
         try
         {
@@ -269,7 +271,21 @@ public class GCPCASClient : IGCPCASClient
                             continue;
                         }
                     }
-                    certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
+                    AnyCAPluginCertificate pluginCertificate = AnyCAPluginCertificateFromGCPCertificate(certificate);
+
+                    // Mirror the subject handling the AnyCA Gateway performs when it builds the
+                    // /v2/certificate/search response: `new X509Name(true, netCert.Subject)`. That call throws
+                    // on subjects BouncyCastle cannot re-parse from .NET's string form, which 500s the entire
+                    // gateway search page and aborts Command's CA sync. Skip such certs here so they never enter
+                    // the gateway database and can never break the downstream sync.
+                    if (!GatewayCanParseSubject(pluginCertificate.Certificate, out string subject, out string skipReason))
+                    {
+                        skippedCertificates++;
+                        _logger.LogWarning($"[SYNC-SKIP] Skipping certificate {pluginCertificate.CARequestID} - its subject would fail the AnyCA Gateway X509Name parse and abort the sync. Subject='{subject}', reason: {skipReason}");
+                        continue;
+                    }
+
+                    certificatesBuffer.Add(pluginCertificate);
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
                 }
@@ -297,6 +313,7 @@ public class GCPCASClient : IGCPCASClient
         {
             certificatesBuffer.CompleteAdding();
             _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
+            _logger.LogInformation($"[SYNC-DIAG] Handed {numberOfCertificates} certificate(s) to the AnyCA Gateway buffer; skipped {skippedCertificates} certificate(s) with subjects the gateway cannot parse. Review the per-record [SYNC-DIAG]/[SYNC-SKIP] lines above for details.");
         }
         _logger.MethodExit();
         return numberOfCertificates;
@@ -356,16 +373,93 @@ public class GCPCASClient : IGCPCASClient
             status = EndEntityStatus.REVOKED;
             revocationReason = (int)certificate.RevocationDetails.RevocationState;
         }
+
+        string caRequestId = certificate.CertificateName.CertificateId;
+        string pem = certificate.PemCertificate;
+
+        // DIAGNOSTIC: the AnyCA Gateway derives the synced certificate's fingerprint and notBefore
+        // (the fields Command's sync gates on) by parsing the content we put in AnyCAPluginCertificate.Certificate.
+        // Log the shape of that content and the metadata that *should* be derivable from it, so we can
+        // compare against what the Gateway stores / returns to Command on the /v2/certificate/search response.
+        LogCertificateContentDiagnostics(caRequestId, pem, status, revocationDate, revocationReason);
+
         _logger.MethodExit();
         return new AnyCAPluginCertificate
         {
-            CARequestID = certificate.CertificateName.CertificateId,
-            Certificate = certificate.PemCertificate,
+            CARequestID = caRequestId,
+            Certificate = pem,
             Status = (int)status,
             ProductID = productId,
             RevocationDate = revocationDate,
             RevocationReason = revocationReason,
         };
+    }
+
+    /// <summary>
+    /// Emits detailed diagnostics about the certificate content being handed to the AnyCA Gateway.
+    /// The Gateway parses <see cref="AnyCAPluginCertificate.Certificate"/> to populate the fingerprint and
+    /// notBefore fields that Command's incremental sync (IssuedDateSyncPartitionTracker) gates on. Logging
+    /// the raw shape and the parsed metadata here pinpoints whether the plugin is the source of empty/zero
+    /// values seen downstream.
+    /// </summary>
+    private void LogCertificateContentDiagnostics(string caRequestId, string pem, EndEntityStatus status, DateTime? revocationDate, int? revocationReason)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(pem))
+            {
+                _logger.LogWarning($"[SYNC-DIAG] CARequestID={caRequestId}: PemCertificate is NULL or EMPTY - the Gateway will have no content to derive fingerprint/notBefore from. status={status} revoked={(revocationDate != null)}");
+                return;
+            }
+
+            bool hasPemArmor = pem.Contains("-----BEGIN");
+            _logger.LogTrace($"[SYNC-DIAG] CARequestID={caRequestId}: PemCertificate length={pem.Length}, hasPemArmor={hasPemArmor}, first40='{pem.Substring(0, Math.Min(40, pem.Length)).Replace("\n", "\\n").Replace("\r", "\\r")}'");
+
+            // Parse exactly what the Gateway would parse to derive metadata.
+            using var parsed = X509Certificate2.CreateFromPem(pem);
+            long notBeforeEpochMs = new DateTimeOffset(parsed.NotBefore.ToUniversalTime()).ToUnixTimeMilliseconds();
+            long notAfterEpochMs = new DateTimeOffset(parsed.NotAfter.ToUniversalTime()).ToUnixTimeMilliseconds();
+
+            _logger.LogDebug(
+                $"[SYNC-DIAG] CARequestID={caRequestId}: parsed OK -> Thumbprint(fingerprint)={parsed.Thumbprint}, " +
+                $"SerialNumber={parsed.SerialNumber}, Subject='{parsed.Subject}', " +
+                $"NotBefore={parsed.NotBefore:o} (epochMs={notBeforeEpochMs}), NotAfter={parsed.NotAfter:o} (epochMs={notAfterEpochMs}), " +
+                $"status={status}, revoked={(revocationDate != null)}, revocationReason={revocationReason}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"[SYNC-DIAG] CARequestID={caRequestId}: FAILED to parse PemCertificate into an X509Certificate2 - the Gateway will likely store an empty fingerprint / notBefore=0 for this record. Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Mirrors the subject parsing the AnyCA Gateway performs when it builds the /v2/certificate/search
+    /// response: <c>new Org.BouncyCastle.Asn1.X509.X509Name(true, netCert.Subject)</c>. That call throws on
+    /// subjects BouncyCastle cannot re-parse from .NET's string representation, which 500s the entire gateway
+    /// search page and aborts Command's CA sync. Returning <see langword="false"/> lets the sync skip the
+    /// certificate so it never enters the gateway database and can never break the downstream Command sync.
+    /// </summary>
+    /// <param name="pem">The PEM certificate content that will be handed to the gateway.</param>
+    /// <param name="subject">The parsed .NET subject string, when available (for logging).</param>
+    /// <param name="failureReason">The exception message when parsing fails.</param>
+    /// <returns><see langword="true"/> if the gateway can parse the subject; otherwise <see langword="false"/>.</returns>
+    private bool GatewayCanParseSubject(string pem, out string subject, out string failureReason)
+    {
+        subject = null;
+        failureReason = null;
+        try
+        {
+            using X509Certificate2 netCert = X509Certificate2.CreateFromPem(pem);
+            subject = netCert.Subject;
+            // This is the exact operation the gateway performs and that throws on problematic subjects.
+            _ = new Org.BouncyCastle.Asn1.X509.X509Name(true, subject);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            failureReason = ex.Message;
+            return false;
+        }
     }
     /// <summary>
     /// Enrolls a certificate using a configured <see cref="ICreateCertificateRequestBuilder"/> and returns the result.
