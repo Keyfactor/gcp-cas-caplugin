@@ -113,40 +113,88 @@ public class GCPCASCAPlugin : IAnyCAPlugin
     public async Task Synchronize(BlockingCollection<AnyCAPluginCertificate> blockingBuffer, DateTime? lastSync, bool fullSync, CancellationToken cancelToken)
     {
         _logger.MethodEntry();
+        string syncType = fullSync ? "Full" : "Incremental";
+        using var flow = new FlowLogger(_logger, $"Synchronize-{syncType}");
+        _logger.LogTrace($"Synchronize called. fullSync={fullSync}, lastSync={lastSync?.ToString("o") ?? "(null)"}, blockingBuffer is {(blockingBuffer == null ? "NULL" : "present")}");
+
+        if (blockingBuffer == null)
+        {
+            flow.Fail("ValidateBuffer", "blockingBuffer is null");
+            throw new ArgumentNullException(nameof(blockingBuffer), "blockingBuffer cannot be null in Synchronize");
+        }
+
         if (fullSync && lastSync != null)
         {
             _logger.LogInformation("Performing a full CA synchronization");
             lastSync = null;
+            flow.Step("DetermineFilter", "Full sync - clearing date filter");
         }
         else
         {
             _logger.LogInformation($"Performing an incremental CA synchronization - downloading certificates issued after {lastSync}");
+            flow.Step("DetermineFilter", $"Incremental - issuedAfter={lastSync?.ToString("o") ?? "(null)"}");
         }
-        int certificates = await Client.DownloadAllIssuedCertificates(blockingBuffer, cancelToken, lastSync);
-        _logger.LogDebug($"Synchronized {certificates} certificates");
+
+        int certificates = 0;
+        try
+        {
+            await flow.StepAsync("DownloadAllIssuedCertificates", async () =>
+            {
+                certificates = await Client.DownloadAllIssuedCertificates(blockingBuffer, cancelToken, lastSync);
+            }, $"buffered count after download");
+            flow.Step("Synchronized", $"{certificates} certificate(s)");
+            _logger.LogDebug($"Synchronized {certificates} certificates");
+        }
+        catch (OperationCanceledException)
+        {
+            flow.Fail("Cancelled", "operation was cancelled");
+            throw;
+        }
+        catch (Exception e)
+        {
+            flow.Fail("SyncError", e.Message);
+            _logger.LogError($"GCP CAS Synchronize task failed: {e.Message}");
+            throw;
+        }
         _logger.MethodExit();
     }
 
-    public Task<AnyCAPluginCertificate> GetSingleRecord(string caRequestID)
+    public async Task<AnyCAPluginCertificate> GetSingleRecord(string caRequestID)
     {
         _logger.MethodEntry();
+        using var flow = new FlowLogger(_logger, $"GetSingleRecord({caRequestID ?? "null"})");
+        AnyCAPluginCertificate result = null;
+        await flow.StepAsync("DownloadCertificate", async () =>
+        {
+            result = await Client.DownloadCertificate(caRequestID);
+        }, $"caRequestID={caRequestID ?? "(null)"}");
         _logger.MethodExit();
-        return Client.DownloadCertificate(caRequestID);
+        return result;
     }
 
-    public Task<EnrollmentResult> Enroll(string csr, string subject, Dictionary<string, string[]> san, EnrollmentProductInfo productInfo, RequestFormat requestFormat, EnrollmentType enrollmentType)
+    public async Task<EnrollmentResult> Enroll(string csr, string subject, Dictionary<string, string[]> san, EnrollmentProductInfo productInfo, RequestFormat requestFormat, EnrollmentType enrollmentType)
     {
         _logger.MethodEntry();
-        ICreateCertificateRequestBuilder ccrBuilder = new CreateCertificateRequestBuilder()
-            .WithCsr(csr)
-            .WithSubject(subject)
-            .WithSans(san)
-            .WithEnrollmentProductInfo(productInfo)
-            .WithRequestFormat(requestFormat)
-            .WithEnrollmentType(enrollmentType);
+        using var flow = new FlowLogger(_logger, $"Enroll-{enrollmentType}");
+        ICreateCertificateRequestBuilder ccrBuilder = null;
+        flow.Step("BuildRequest", () =>
+        {
+            ccrBuilder = new CreateCertificateRequestBuilder()
+                .WithCsr(csr)
+                .WithSubject(subject)
+                .WithSans(san)
+                .WithEnrollmentProductInfo(productInfo)
+                .WithRequestFormat(requestFormat)
+                .WithEnrollmentType(enrollmentType);
+        }, $"subject='{subject}', sanCount={(san?.Count ?? 0)}");
 
+        EnrollmentResult result = null;
+        await flow.StepAsync("Enroll", async () =>
+        {
+            result = await Client.Enroll(ccrBuilder, CancellationToken.None);
+        }, $"status after enroll");
         _logger.MethodExit();
-        return Client.Enroll(ccrBuilder, CancellationToken.None);
+        return result;
     }
 
     public async Task<int> Revoke(string caRequestID, string hexSerialNumber, uint revocationReason)
