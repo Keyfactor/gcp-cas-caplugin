@@ -271,6 +271,7 @@ public class GCPCASClient : IGCPCASClient
                             continue;
                         }
                     }
+<<<<<<< release-1.3
                     AnyCAPluginCertificate pluginCertificate = AnyCAPluginCertificateFromGCPCertificate(certificate);
 
                     // Mirror the subject handling the AnyCA Gateway performs when it builds the
@@ -286,6 +287,9 @@ public class GCPCASClient : IGCPCASClient
                     }
 
                     certificatesBuffer.Add(pluginCertificate);
+=======
+                    certificatesBuffer.Add(AnyCAPluginCertificateFromGCPCertificate(certificate));
+>>>>>>> main
                     numberOfCertificates++;
                     _logger.LogDebug($"Found Certificate with name {certificate.CertificateName.CertificateId} {this.ToString()}");
                 }
@@ -313,7 +317,10 @@ public class GCPCASClient : IGCPCASClient
         {
             certificatesBuffer.CompleteAdding();
             _logger.LogDebug($"Fetched {certificatesBuffer.Count} certificates from GCP over {pageNumber} pages.");
+<<<<<<< release-1.3
             _logger.LogInformation($"[SYNC-DIAG] Handed {numberOfCertificates} certificate(s) to the AnyCA Gateway buffer; skipped {skippedCertificates} certificate(s) with subjects the gateway cannot parse. Review the per-record [SYNC-DIAG]/[SYNC-SKIP] lines above for details.");
+=======
+>>>>>>> main
         }
         _logger.MethodExit();
         return numberOfCertificates;
@@ -373,6 +380,7 @@ public class GCPCASClient : IGCPCASClient
             status = EndEntityStatus.REVOKED;
             revocationReason = (int)certificate.RevocationDetails.RevocationState;
         }
+<<<<<<< release-1.3
 
         string caRequestId = certificate.CertificateName.CertificateId;
         string pem = certificate.PemCertificate;
@@ -383,6 +391,8 @@ public class GCPCASClient : IGCPCASClient
         // compare against what the Gateway stores / returns to Command on the /v2/certificate/search response.
         LogCertificateContentDiagnostics(caRequestId, pem, status, revocationDate, revocationReason);
 
+=======
+>>>>>>> main
         _logger.MethodExit();
         return new AnyCAPluginCertificate
         {
