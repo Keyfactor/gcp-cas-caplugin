@@ -1,3 +1,8 @@
+<<<<<<< release-1.3
+- 1.3.3
+  - Sync now skips bad/unparseable certificates returned from Google CAS instead of failing the sync.
+=======
+>>>>>>> main
 - 1.3.2
   - Fixed Sans Being passed through Extensions Data, Google does not like this.
 - 1.3.1
