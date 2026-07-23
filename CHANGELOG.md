@@ -1,8 +1,7 @@
-<<<<<<< release-1.3
+- 1.3.4
+  - Sync subject guard now also skips certificates whose subject contains an odd-length run of literal backslash bytes (e.g. a CN ending in one `\`). The 1.3.3 guard admitted these and they aborted Command's Full Scan with "badly formatted directory string" once the gateway re-parsed the un-escaped subject (issue #30). Each skipped certificate is logged at error level (`[SYNC-SKIP]`) with its request ID, subject, and reason, and sync continues so a full sync can complete.
 - 1.3.3
   - Sync now skips bad/unparseable certificates returned from Google CAS instead of failing the sync.
-=======
->>>>>>> main
 - 1.3.2
   - Fixed Sans Being passed through Extensions Data, Google does not like this.
 - 1.3.1
