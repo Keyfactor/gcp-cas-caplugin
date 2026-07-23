@@ -1,8 +1,7 @@
-<<<<<<< release-1.3
+- 1.3.4
+  - Upgraded BouncyCastle.Cryptography from 2.0.0 to 2.6.2. The plugin now pins the same BouncyCastle build the AnyCA Gateway uses, so the sync subject guard parses subjects exactly as the gateway does and skips only certificates the gateway genuinely cannot parse (e.g. a CN ending in a dangling `\`, which GCP CAS will issue but RFC 4514 forbids). The 1.3.3 guard ran against the lenient 2.0.0 parser, which never threw on these shapes, so they were admitted and later aborted Command's Full Scan with "badly formatted directory string" (issue #30). Each skipped certificate is logged at error level (`[SYNC-SKIP]`) with its request ID, subject, and reason, and sync continues so a full sync can complete. The upgrade also clears the known BouncyCastle 2.0.0 security advisories.
 - 1.3.3
   - Sync now skips bad/unparseable certificates returned from Google CAS instead of failing the sync.
-=======
->>>>>>> main
 - 1.3.2
   - Fixed Sans Being passed through Extensions Data, Google does not like this.
 - 1.3.1
