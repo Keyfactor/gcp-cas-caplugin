@@ -433,12 +433,21 @@ public class GCPCASClient : IGCPCASClient
     }
 
     /// <summary>
-    /// Mirrors the subject parsing the AnyCA Gateway performs when it builds the /v2/certificate/search
-    /// response: <c>new Org.BouncyCastle.Asn1.X509.X509Name(true, netCert.Subject)</c>. That call throws on
-    /// subjects BouncyCastle cannot re-parse from .NET's string representation, which 500s the entire gateway
-    /// search page and aborts Command's CA sync. Returning <see langword="false"/> lets the sync skip the
-    /// certificate so it never enters the gateway database and can never break the downstream Command sync.
+    /// Mirrors the subject parsing the AnyCA Gateway performs on the /v2/certificate/search response and
+    /// returns <see langword="false"/> for subjects that would abort Command's CA sync, so the plugin can
+    /// skip the certificate before it ever enters the gateway database.
     /// </summary>
+    /// <remarks>
+    /// The gateway exercises the subject twice, and the two operations do not see the same string. On the way
+    /// in it stores the subject with literal backslash bytes escape-doubled; on the way out (the search
+    /// response) it un-escapes that stored form one level and hands the result to
+    /// <c>new Org.BouncyCastle.Asn1.X509.X509Name(true, ...)</c>. A value containing an odd-length run of
+    /// literal backslashes (e.g. a CN ending in one <c>\</c>) survives storage but un-escapes back to a
+    /// dangling escape (<c>CN=...\</c>), which <c>X509NameTokenizer</c> rejects with
+    /// "badly formatted directory string": the search page 500s and Command's sync aborts. The 1.3.3 guard
+    /// only ran <c>new X509Name(true, netCert.Subject)</c>, which does not throw on these shapes, so they were
+    /// admitted. <see cref="SubjectSurvivesGatewayRoundTrip"/> now checks the shape structurally instead.
+    /// </remarks>
     /// <param name="pem">The PEM certificate content that will be handed to the gateway.</param>
     /// <param name="subject">The parsed .NET subject string, when available (for logging).</param>
     /// <param name="failureReason">The exception message when parsing fails.</param>
@@ -451,15 +460,99 @@ public class GCPCASClient : IGCPCASClient
         {
             using X509Certificate2 netCert = X509Certificate2.CreateFromPem(pem);
             subject = netCert.Subject;
-            // This is the exact operation the gateway performs and that throws on problematic subjects.
-            _ = new Org.BouncyCastle.Asn1.X509.X509Name(true, subject);
-            return true;
         }
         catch (Exception ex)
         {
             failureReason = ex.Message;
             return false;
         }
+
+        return SubjectSurvivesGatewayRoundTrip(subject, out failureReason);
+    }
+
+    /// <summary>
+    /// Returns whether an RFC 4514 subject string as produced by <see cref="X509Certificate2.Subject"/>
+    /// survives the AnyCA Gateway's store-then-re-parse round trip without aborting Command's CA sync.
+    /// </summary>
+    /// <remarks>
+    /// The gateway stores the subject with its literal backslash bytes escape-doubled, then un-escapes one
+    /// level and re-parses the result on its /v2/certificate/search response. A value containing a run of
+    /// literal backslashes of <em>odd</em> length collapses to an unbalanced escape on that round trip
+    /// (a lone trailing <c>\</c>, or a <c>\</c> in front of a non-escapable character), which the gateway's
+    /// <c>X509Name</c> tokenizer rejects with "badly formatted directory string" - 500ing the search page and
+    /// aborting the sync. Runs of even length round-trip cleanly (each pair is a valid escaped backslash),
+    /// which is why the ticket saw only the single-backslash shape abort while the two- and four-backslash
+    /// shapes synced.
+    ///
+    /// Note this is a structural check, not a mirror of one BouncyCastle call: .NET's
+    /// <see cref="X509Certificate2.Subject"/> renders literal backslash bytes verbatim (it quotes values
+    /// containing separators rather than backslash-escaping them), and the exact throw lives in the gateway's
+    /// own BouncyCastle build, so checking the shape is more reliable across gateway/BouncyCastle versions
+    /// than re-running the gateway's parse locally. A defensive local parse is still attempted as a second
+    /// net.
+    /// </remarks>
+    /// <param name="dotNetSubject">The subject string in .NET's RFC 4514 form.</param>
+    /// <param name="failureReason">The reason the subject is unsafe; otherwise <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> if the subject survives the round trip; otherwise <see langword="false"/>.</returns>
+    internal static bool SubjectSurvivesGatewayRoundTrip(string dotNetSubject, out string failureReason)
+    {
+        failureReason = null;
+
+        if (HasOddBackslashRun(dotNetSubject))
+        {
+            failureReason = "subject contains an attribute value with an odd-length run of literal backslash bytes; " +
+                "the AnyCA Gateway cannot round-trip this on its search response and it would abort Command's CA sync";
+            return false;
+        }
+
+        // Defense in depth: also reject anything BouncyCastle itself refuses to parse from the .NET string form.
+        try
+        {
+            _ = new Org.BouncyCastle.Asn1.X509.X509Name(true, dotNetSubject);
+        }
+        catch (Exception ex)
+        {
+            failureReason = ex.Message;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="value"/> contains at least one maximal run of
+    /// backslash (<c>\</c>) characters whose length is odd. Such a run is what breaks the gateway's
+    /// escape-double / un-escape round trip. See <see cref="SubjectSurvivesGatewayRoundTrip"/>.
+    /// </summary>
+    internal static bool HasOddBackslashRun(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        int i = 0;
+        while (i < value.Length)
+        {
+            if (value[i] != '\\')
+            {
+                i++;
+                continue;
+            }
+
+            int runStart = i;
+            while (i < value.Length && value[i] == '\\')
+            {
+                i++;
+            }
+
+            if (((i - runStart) & 1) == 1)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
     /// <summary>
     /// Enrolls a certificate using a configured <see cref="ICreateCertificateRequestBuilder"/> and returns the result.
