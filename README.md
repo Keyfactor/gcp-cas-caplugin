@@ -179,6 +179,11 @@ Both the Keyfactor Command and AnyCA Gateway REST servers must trust the root CA
 
 3. Follow the [official Keyfactor documentation](https://software.keyfactor.com/Guides/AnyCAGatewayREST/Content/AnyCAGatewayREST/AddCA-Keyfactor.htm) to add each defined Certificate Authority to Keyfactor Command and import the newly defined Certificate Templates.
 
+4. In Keyfactor Command (v12.3+), for each imported Certificate Template, follow the [official documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Configuring%20Template%20Options.htm) to define enrollment fields for each of the following parameters:
+
+    * **CertificateLifetimeDays** - The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is 365 days. 
+    * **nar_id** - Optional. When set, this value is applied unchanged to the issued certificate in GCP CAS as the label `nar_id`. GCP label values may contain only lowercase letters, numeric characters, underscores and dashes, and may be at most 63 characters. Leave empty to apply no label. 
+
 
 ## Google Certificate Authority Service (CAS) Setup for Keyfactor Integration
 
