@@ -42,6 +42,10 @@
                 {
                     "name": "CertificateLifetimeDays",
                     "description": "The desired lifetime, in days, of the issued certificate. Used by GCP to create the `not_before_time` and `not_after_time` fields in the signed X.509 certificate. If the lifetime extends past the life of any CA in the issuing chain, this value will be truncated. Additionally, if the lifetime extends past the CA Pool's Maximum Lifetime, this value will be truncated accordingly. The default value is 365 days."
+                },
+                {
+                    "name": "nar_id",
+                    "description": "Optional. When set, this value is applied unchanged to the issued certificate in GCP CAS as the label `nar_id`. GCP label values may contain only lowercase letters, numeric characters, underscores and dashes, and may be at most 63 characters. Leave empty to apply no label."
                 }
             ]
         }

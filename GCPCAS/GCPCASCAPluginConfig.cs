@@ -49,7 +49,12 @@ public class GCPCASPluginConfig
     public static class EnrollmentParametersConstants
     {
         public const string CertificateLifetimeDays = "CertificateLifetimeDays";
+        // Enrollment parameter name; also used verbatim as the GCP certificate label key
+        public const string NarId = "nar_id";
     }
+
+    // GCP label limits: https://cloud.google.com/resource-manager/docs/labels-overview
+    public const int MaxLabelLength = 63;
 
     public static Dictionary<string, PropertyConfigInfo> GetPluginAnnotations()
     {
@@ -110,6 +115,13 @@ public class GCPCASPluginConfig
                 Hidden = false,
                 DefaultValue = DefaultCertificateLifetime,
                 Type = "Number"
+            },
+            [EnrollmentParametersConstants.NarId] = new PropertyConfigInfo()
+            {
+                Comments = "Optional. When set, this value is applied unchanged to the issued certificate in GCP CAS as the label `nar_id`. GCP label values may contain only lowercase letters, numeric characters, underscores and dashes, and may be at most 63 characters. Leave empty to apply no label.",
+                Hidden = false,
+                DefaultValue = "",
+                Type = "String"
             },
         };
     }
