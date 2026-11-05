@@ -38,6 +38,10 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
         private Dictionary<string, string[]> _sans;
         private int _certificateLifetimeDays = GCPCASPluginConfig.DefaultCertificateLifetime;
 
+        // Labels applied to the certificate resource in GCP CAS, passed through without modification
+        private Dictionary<string, string> _labels = new Dictionary<string, string>();
+
+
         // Store additional extensions
         private List<Google.Cloud.Security.PrivateCA.V1.X509Extension> _additionalExtensions = new List<X509Extension>();
 
@@ -73,6 +77,14 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
                     {
                         _logger.LogDebug($"Using validity of {_certificateLifetimeDays} days.");
                     }
+                }
+
+                if (productInfo.ProductParameters.TryGetValue(GCPCASPluginConfig.EnrollmentParametersConstants.NarId, out string narId)
+                    && !string.IsNullOrWhiteSpace(narId))
+                {
+                    ValidateLabelValue(GCPCASPluginConfig.EnrollmentParametersConstants.NarId, narId);
+                    _labels[GCPCASPluginConfig.EnrollmentParametersConstants.NarId] = narId;
+                    _logger.LogDebug($"Applying label {GCPCASPluginConfig.EnrollmentParametersConstants.NarId}={narId}");
                 }
 
                 _logger.LogTrace($"Looping through extensions for Auto Enrollment Params");
@@ -208,6 +220,11 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
             };
             _logger.LogTrace($"Serialized theCertificate {JsonConvert.SerializeObject(theCertificate)}");
 
+            foreach (var label in _labels)
+            {
+                theCertificate.Labels[label.Key] = label.Value;
+            }
+
             if (!string.IsNullOrWhiteSpace(_certificateTemplate))
             {
                 CertificateTemplateName template = new CertificateTemplateName(projectId, locationId, _certificateTemplate);
@@ -232,6 +249,19 @@ namespace Keyfactor.Extensions.CAPlugin.GCPCAS.Client
             return theRequest;
         }
 
+
+        /// <summary>
+        /// Fails early with a clear message if a value can't be a GCP label value. The value is never modified.
+        /// </summary>
+        private static void ValidateLabelValue(string name, string value)
+        {
+            if (value.Length > GCPCASPluginConfig.MaxLabelLength ||
+                !value.All(c => (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            {
+                throw new ArgumentException(
+                    $"Value for '{name}' is not a valid GCP label value. It must be at most {GCPCASPluginConfig.MaxLabelLength} characters and contain only lowercase letters, digits, underscores and dashes.");
+            }
+        }
 
         /// <summary>
         /// Creates a properly formatted X509Extension from an OID and Base64-encoded value.
