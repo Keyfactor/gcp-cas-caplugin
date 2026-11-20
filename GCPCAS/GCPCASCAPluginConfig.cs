@@ -26,8 +26,15 @@ public class GCPCASPluginConfig
     public const string NoTemplateName = "Default";
     public const int DefaultCertificateLifetime = 365;
 
+    // Regex applied to each certificate's subject during sync and single-record fetch. A match means the certificate
+    // is skipped (never handed to the AnyCA Gateway). The default matches any subject containing a backslash, because
+    // subjects with backslashes have caused the Gateway's certificate search to return HTTP 500 for the whole page.
+    // Setting the field to an empty string turns the pattern off (the BouncyCastle parse check still applies).
+    public const string DefaultSubjectSkipPattern = @"\\";
+
     public class ConfigConstants
     {
+        public const string SubjectSkipPattern = "SubjectSkipPattern";
         public const string ProjectId = "ProjectId";
         public const string LocationId = "LocationId";
         public const string CAPool = "CAPool";
@@ -44,6 +51,8 @@ public class GCPCASPluginConfig
         public string CAId { get; set; }
         public bool Enabled { get; set; }
         public string ServiceAccountKey { get; set; }
+        // null (field absent) = use DefaultSubjectSkipPattern; empty = no pattern; otherwise a .NET regex.
+        public string SubjectSkipPattern { get; set; }
     }
 
     public static class EnrollmentParametersConstants
@@ -96,6 +105,13 @@ public class GCPCASPluginConfig
                 Hidden = true,
                 DefaultValue = "",
                 Type = "Secret"
+            },
+            [ConfigConstants.SubjectSkipPattern] = new PropertyConfigInfo()
+            {
+                Comments = @"Optional .NET regular expression. During sync (and when a single certificate is fetched) any certificate whose subject matches is skipped and logged as [SYNC-SKIP], so it never enters the AnyCA Gateway database. The default, \\, skips every subject containing a backslash, because such subjects have caused the Gateway's certificate search to fail. To narrow it, supply a more specific pattern, for example \\$ to skip only subjects ending in a backslash. Set to an empty value to disable the pattern.",
+                Hidden = false,
+                DefaultValue = DefaultSubjectSkipPattern,
+                Type = "String"
             },
         };
     }
