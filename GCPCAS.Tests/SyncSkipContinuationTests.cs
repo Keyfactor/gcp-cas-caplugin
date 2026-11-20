@@ -109,7 +109,8 @@ public class SyncSkipContinuationTests
             Page(fixture.Skip(5).Select(f => f.Cert).ToArray()),
         });
 
-        var gcpClient = new GCPCASClient(client, Project, Location, Pool);
+        // Empty pattern turns the backslash skip off so this test isolates the BouncyCastle parse guard.
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool, "", subjectSkipPattern: "");
         var buffer = new BlockingCollection<AnyCAPluginCertificate>();
 
         int added = await gcpClient.DownloadAllIssuedCertificates(buffer, CancellationToken.None);
@@ -121,6 +122,100 @@ public class SyncSkipContinuationTests
         Assert.Equal(expectedBuffered, bufferedIds);              // exactly the 8 parseable, in order
         Assert.DoesNotContain("shape1", bufferedIds);             // the only skipped shape
         Assert.True(buffer.IsAddingCompleted);                    // sync completed cleanly
+    }
+
+    [Fact]
+    public async Task DownloadAllIssuedCertificates_DefaultPattern_SkipsAnySubjectWithBackslash()
+    {
+        // shape2/shape3 are validly escaped and parse fine in BouncyCastle, but contain backslashes.
+        var client = new FakeCasClient(new[]
+        {
+            Page(CnCert("good", "ok.lab.test"), CnCert("shape2", "shape2.lab.test\\\\"),
+                 CnCert("plain", "x.lab.test"), CnCert("good-2", "ok2.lab.test")),
+        });
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool); // default pattern
+        var buffer = new BlockingCollection<AnyCAPluginCertificate>();
+
+        await gcpClient.DownloadAllIssuedCertificates(buffer, CancellationToken.None);
+
+        Assert.Equal(new[] { "good", "plain", "good-2" }, buffer.Select(c => c.CARequestID).ToArray());
+    }
+
+    [Fact]
+    public async Task DownloadAllIssuedCertificates_NarrowedPattern_OnlySkipsMatches()
+    {
+        // Narrowed to "backslash at end of the subject": the validly escaped shape2 mid-DN is now allowed.
+        var client = new FakeCasClient(new[]
+        {
+            Page(Cert("mid", Dn(b => { b.AddCommonName("mid.lab.test\\\\"); b.AddOrganizationName("Org"); })),
+                 CnCert("plain", "plain.lab.test")),
+        });
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool, "", subjectSkipPattern: @"\\$");
+        var buffer = new BlockingCollection<AnyCAPluginCertificate>();
+
+        await gcpClient.DownloadAllIssuedCertificates(buffer, CancellationToken.None);
+
+        Assert.Equal(new[] { "mid", "plain" }, buffer.Select(c => c.CARequestID).ToArray());
+    }
+
+    [Fact]
+    public async Task DownloadCertificate_DefaultPattern_RefusesBackslashSubject()
+    {
+        var client = new FakeCasClient(Array.Empty<ListCertificatesResponse>()) { Single = CnCert("s2", "s2.lab.test\\\\") };
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gcpClient.DownloadCertificate("s2"));
+    }
+
+    [Theory]
+    [InlineData(null, @"\\")]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData(@"\\$", @"\\$")]
+    public void BuildSubjectSkipRegex_NullDefaults_EmptyDisables(string? configured, string? expectedPattern)
+    {
+        var regex = GCPCASClient.BuildSubjectSkipRegex(configured!);
+        Assert.Equal(expectedPattern, regex?.ToString());
+    }
+
+    [Fact]
+    public void BuildSubjectSkipRegex_InvalidPattern_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => GCPCASClient.BuildSubjectSkipRegex("(unclosed"));
+    }
+
+    [Fact]
+    public async Task DownloadCertificate_BadSubject_IsRefused_NotReturnedToGateway()
+    {
+        var client = new FakeCasClient(Array.Empty<ListCertificatesResponse>()) { Single = CnCert("bad-1", @"broken.lab.test\") };
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gcpClient.DownloadCertificate("bad-1"));
+    }
+
+    [Fact]
+    public async Task DownloadCertificate_GoodSubject_IsReturned()
+    {
+        var client = new FakeCasClient(Array.Empty<ListCertificatesResponse>()) { Single = CnCert("good-1", "app-01.lab.test") };
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool);
+
+        AnyCAPluginCertificate result = await gcpClient.DownloadCertificate("good-1");
+
+        Assert.Equal("good-1", result.CARequestID);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not a pem")]
+    public async Task DownloadCertificate_UnparseablePem_IsStillReturned(string pem)
+    {
+        var cert = new Certificate { CertificateName = new CertificateName(Project, Location, Pool, "weird"), PemCertificate = pem };
+        var client = new FakeCasClient(Array.Empty<ListCertificatesResponse>()) { Single = cert };
+        var gcpClient = new GCPCASClient(client, Project, Location, Pool);
+
+        AnyCAPluginCertificate result = await gcpClient.DownloadCertificate("weird");
+
+        Assert.Equal("weird", result.CARequestID);
     }
 
     private static ListCertificatesResponse Page(params Certificate[] certs)
@@ -163,6 +258,12 @@ public class SyncSkipContinuationTests
     {
         private readonly IReadOnlyList<ListCertificatesResponse> _pages;
         public FakeCasClient(IReadOnlyList<ListCertificatesResponse> pages) => _pages = pages;
+
+        /// <summary>The certificate returned by GetCertificateAsync.</summary>
+        public Certificate? Single { get; init; }
+
+        public override Task<Certificate> GetCertificateAsync(GetCertificateRequest request, CallSettings callSettings = null!)
+            => Task.FromResult(Single!);
 
         public override PagedAsyncEnumerable<ListCertificatesResponse, Certificate> ListCertificatesAsync(
             ListCertificatesRequest request, CallSettings callSettings = null!)

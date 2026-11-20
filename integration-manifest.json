@@ -36,6 +36,10 @@
                 {
                     "name": "ServiceAccountKey",
                     "description": "Optional JSON service account key for GCP authentication. When provided, this is used instead of Application Default Credentials (ADC). This is recommended for containerized environments where mounting a credentials file is not practical. Leave empty to use ADC."
+                },
+                {
+                    "name": "SubjectSkipPattern",
+                    "description": "Optional .NET regular expression. During sync (and when a single certificate is fetched) any certificate whose subject matches is skipped and logged as [SYNC-SKIP], so it never enters the AnyCA Gateway database. The default, \\\\, skips every subject containing a backslash, because such subjects have caused the Gateway's certificate search to fail. To narrow it, supply a more specific pattern, for example \\\\$ to skip only subjects ending in a backslash. Set to an empty value to disable the pattern."
                 }
             ],
             "enrollment_config": [

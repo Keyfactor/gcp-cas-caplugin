@@ -18,6 +18,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Api.Gax;
@@ -52,6 +53,32 @@ public class GCPCASClient : IGCPCASClient
     string _caPool;
     string _caId;
 
+    // Certificates whose subject matches are skipped at sync / single fetch. Null = no pattern.
+    Regex _subjectSkipRegex;
+
+    /// <summary>
+    /// Builds the subject-skip regex from the configured pattern. <see langword="null"/> (field not configured) uses
+    /// <see cref="GCPCASPluginConfig.DefaultSubjectSkipPattern"/>; an empty or whitespace value turns the pattern off.
+    /// </summary>
+    /// <exception cref="ArgumentException">The pattern is not a valid regular expression.</exception>
+    internal static Regex BuildSubjectSkipRegex(string pattern)
+    {
+        pattern ??= GCPCASPluginConfig.DefaultSubjectSkipPattern;
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException($"SubjectSkipPattern '{pattern}' is not a valid regular expression: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>
     /// Initializes a new instance of the <see cref="GCPCASClient"/> class.
     /// </summary>
@@ -60,10 +87,12 @@ public class GCPCASClient : IGCPCASClient
     /// <param name="caPool">The CA Pool ID in GCP CAS to use for certificate operations. If the CA Pool has resource name <c>projects/my-project/locations/us-central1/caPools/my-pool</c>, this field should be set to <c>my-pool</c></param>
     /// <param name="caId">The CA ID of a CA in the same CA Pool as CAPool. For example, to issue certificates from a CA with resource name <c>projects/my-project/locations/us-central1/caPools/my-pool/certificateAuthorities/my-ca</c>, this field should be set to <c>my-ca</c>.</param>
     /// <param name="serviceAccountKey">Optional JSON service account key. When provided, used instead of Application Default Credentials.</param>
-    public GCPCASClient(string locationId, string projectId, string caPool, string caId, string serviceAccountKey = null)
+    /// <param name="subjectSkipPattern">Optional regex; certificates whose subject matches are skipped. Null uses the default (any backslash); empty disables it.</param>
+    public GCPCASClient(string locationId, string projectId, string caPool, string caId, string serviceAccountKey = null, string subjectSkipPattern = null)
     {
         _logger = LogHandler.GetClassLogger<GCPCASClient>();
         _logger.MethodEntry();
+        _subjectSkipRegex = BuildSubjectSkipRegex(subjectSkipPattern);
         _logger.LogDebug($"Creating GCP CA Services Client with Location: {locationId}, Project ID: {projectId}, CA Pool: {caPool}, CA ID: {caId}");
 
         this._projectId = projectId;
@@ -91,9 +120,10 @@ public class GCPCASClient : IGCPCASClient
     /// fake) instead of building a credentialed one, and starts enabled. Lets the sync loop be exercised
     /// without GCP credentials. Not for production use.
     /// </summary>
-    internal GCPCASClient(CertificateAuthorityServiceClient client, string projectId, string locationId, string caPool, string caId = "")
+    internal GCPCASClient(CertificateAuthorityServiceClient client, string projectId, string locationId, string caPool, string caId = "", string subjectSkipPattern = null)
     {
         _logger = LogHandler.GetClassLogger<GCPCASClient>();
+        _subjectSkipRegex = BuildSubjectSkipRegex(subjectSkipPattern);
         _client = client;
         _projectId = projectId;
         _locationId = locationId;
@@ -361,8 +391,20 @@ public class GCPCASClient : IGCPCASClient
 
         Certificate certificate = await _client.GetCertificateAsync(request);
         _logger.LogTrace("GetCertificateAsync succeeded");
+        AnyCAPluginCertificate pluginCertificate = AnyCAPluginCertificateFromGCPCertificate(certificate);
+
+        // Same guard as the sync path: a certificate whose subject the gateway cannot parse must not be handed
+        // over, or it can end up stored and later 500 the /v2/certificate/search page that contains it.
+        // A PEM that does not parse at all leaves subject null and is returned as before; only a certificate that
+        // parses but whose subject BouncyCastle rejects is refused.
+        if (!GatewayCanParseSubject(pluginCertificate.Certificate, out string subject, out string skipReason) && subject != null)
+        {
+            _logger.LogError($"[SYNC-SKIP] Refusing to return certificate {certificateId} - its subject would fail the AnyCA Gateway X509Name parse. Subject='{subject}', reason: {skipReason}");
+            throw new InvalidOperationException($"Certificate {certificateId} has a subject the AnyCA Gateway cannot parse ({skipReason}); it was not returned to the gateway.");
+        }
+
         _logger.MethodExit();
-        return AnyCAPluginCertificateFromGCPCertificate(certificate);
+        return pluginCertificate;
     }
 
     private AnyCAPluginCertificate AnyCAPluginCertificateFromGCPCertificate(Certificate certificate)
@@ -482,6 +524,26 @@ public class GCPCASClient : IGCPCASClient
         {
             failureReason = ex.Message;
             return false;
+        }
+
+        // Operator-configurable skip pattern (default: any backslash). Checked first so a match is skipped even when
+        // BouncyCastle would have parsed the subject.
+        if (_subjectSkipRegex != null)
+        {
+            try
+            {
+                if (_subjectSkipRegex.IsMatch(subject))
+                {
+                    failureReason = $"subject matches SubjectSkipPattern '{_subjectSkipRegex}'";
+                    return false;
+                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                // Cannot decide - skip rather than risk handing the gateway a row it may choke on.
+                failureReason = $"SubjectSkipPattern '{_subjectSkipRegex}' timed out evaluating the subject";
+                return false;
+            }
         }
 
         return SubjectSurvivesGatewayRoundTrip(subject, out failureReason);
